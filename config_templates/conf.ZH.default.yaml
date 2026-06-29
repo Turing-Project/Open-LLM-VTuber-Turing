@@ -171,7 +171,7 @@ character_config:
 
   # === 自动语音识别 ===
   asr_config:
-    # 语音转文本模型选项：'faster_whisper', 'whisper_cpp', 'whisper', 'azure_asr', 'fun_asr', 'groq_whisper_asr', 'sherpa_onnx_asr'
+    # 语音转文本模型选项：'faster_whisper', 'whisper_cpp', 'whisper', 'azure_asr', 'fun_asr', 'groq_whisper_asr', 'sherpa_onnx_asr', 'fish_audio_asr'
     asr_model: 'sherpa_onnx_asr' # 使用的语音识别模型
 
     azure_asr:
@@ -267,13 +267,18 @@ character_config:
       model: 'whisper-large-v3-turbo' # 或者 'whisper-large-v3'
       lang: '' # 留空表示自动
 
+    fish_audio_asr:
+      api_key: '' # 也可通过 FISH_API_KEY 环境变量设置
+      base_url: 'https://api.fish.audio'
+      language: '' # 留空表示自动检测
+
   # =================== 文本转语音 ===================
   tts_config:
     tts_model: 'edge_tts' # 使用的文本转语音模型
     # 文本转语音模型选项：
     #   'azure_tts', 'pyttsx3_tts', 'edge_tts', 'bark_tts',
     #   'cosyvoice_tts', 'melo_tts', 'coqui_tts', 'piper_tts',
-    #   'fish_api_tts', 'x_tts', 'gpt_sovits_tts', 'sherpa_onnx_tts'
+    #   'fish_api_tts', 'fish_audio_tts', 'x_tts', 'gpt_sovits_tts', 'sherpa_onnx_tts'
     #   'minimax_tts', 'elevenlabs_tts', 'cartesia_tts'
 
     siliconflow_tts:
@@ -371,6 +376,13 @@ character_config:
       # 'normal' 或 'balanced'。balanced 更快但质量较低。
       latency: 'balanced' # 延迟
       base_url: 'https://api.fish.audio' # 基础 URL
+
+    fish_audio_tts:
+      api_key: '' # 也可通过 FISH_API_KEY 环境变量设置
+      reference_id: '2eae72ac40a34d09917441fcb75f9703'
+      latency: 'balanced'
+      base_url: 'https://api.fish.audio'
+      format: 'wav'
 
     coqui_tts:
       # 要使用的 TTS 模型的名称。如果为空，将使用默认模型

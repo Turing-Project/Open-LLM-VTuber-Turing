@@ -24,6 +24,7 @@ from .asr import (
     FunASRConfig,
     SherpaOnnxASRConfig,
     GroqWhisperASRConfig,
+    FishAudioASRConfig,
 )
 from .tts import (
     TTSConfig,
@@ -36,6 +37,7 @@ from .tts import (
     XTTSConfig,
     GPTSoVITSConfig,
     FishAPITTSConfig,
+    FishAudioTTSConfig,
     SherpaOnnxTTSConfig,
 )
 from .vad import (
@@ -93,6 +95,7 @@ __all__ = [
     "FunASRConfig",
     "SherpaOnnxASRConfig",
     "GroqWhisperASRConfig",
+    "FishAudioASRConfig",
     # TTS related classes
     "TTSConfig",
     "AzureTTSConfig",
@@ -104,6 +107,7 @@ __all__ = [
     "XTTSConfig",
     "GPTSoVITSConfig",
     "FishAPITTSConfig",
+    "FishAudioTTSConfig",
     "SherpaOnnxTTSConfig",
     # VAD related classes
     "VADConfig",

@@ -26,5 +26,54 @@
                 "": 1
             }
         }
+    },
+    {
+        "name": "gugugaga",
+        "description": "gugugaga meme model with wing flap and beak expressions",
+        "url": "/live2d-models/gugugaga/gugugaga.model3.json",
+        "kScale": 0.55,
+        "initialXshift": 0,
+        "initialYshift": 0,
+        "kXOffset": 1150,
+        "idleMotionGroupName": "Idle",
+        "emotionMap": {
+            "neutral": 0,
+            "anger": 2,
+            "disgust": 2,
+            "fear": 1,
+            "joy": 3,
+            "smirk": 3,
+            "sadness": 1,
+            "surprise": 3
+        },
+        "tapMotions": {
+            "HitAreaHead": {
+                "": 1
+            },
+            "HitAreaBody": {
+                "": 1
+            }
+        }
+    },
+    {
+        "name": "penguin",
+        "description": "Company IP penguin mascot",
+        "url": "/live2d-models/penguin/penguin.model3.json?v=3",
+        "kScale": 0.2,
+        "initialXshift": 0,
+        "initialYshift": 0,
+        "kXOffset": 1150,
+        "idleMotionGroupName": "Idle",
+        "emotionMap": {
+            "neutral": 0,
+            "joy": 9,
+            "anger": 3,
+            "shy": 4,
+            "disgust": 5,
+            "playful": 6,
+            "thinking": 7,
+            "speechless": 8
+        },
+        "tapMotions": {}
     }
 ]

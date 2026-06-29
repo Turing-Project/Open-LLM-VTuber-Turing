@@ -14,7 +14,7 @@ class TTSEngine(TTSInterface):
     def __init__(
         self,
         api_key: str,
-        reference_id="7f92f8afb8ec43bf81429cc1c9199cb1",
+        reference_id="2eae72ac40a34d09917441fcb75f9703",
         latency: Literal["normal", "balanced"] = "balanced",
         base_url="https://api.fish.audio",
     ):

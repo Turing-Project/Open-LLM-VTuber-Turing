@@ -172,7 +172,7 @@ character_config:
 
   # === Automatic Speech Recognition ===
   asr_config:
-    # speech to text model options: 'faster_whisper', 'whisper_cpp', 'whisper', 'azure_asr', 'fun_asr', 'groq_whisper_asr', 'sherpa_onnx_asr'
+    # speech to text model options: 'faster_whisper', 'whisper_cpp', 'whisper', 'azure_asr', 'fun_asr', 'groq_whisper_asr', 'sherpa_onnx_asr', 'fish_audio_asr'
     asr_model: 'sherpa_onnx_asr'
 
     azure_asr:
@@ -270,13 +270,18 @@ character_config:
       model: 'whisper-large-v3-turbo' # or 'whisper-large-v3'
       lang: '' # put nothing and it will be auto
 
+    fish_audio_asr:
+      api_key: '' # or set FISH_API_KEY environment variable
+      base_url: 'https://api.fish.audio'
+      language: '' # leave empty for auto-detect
+
   # =================== Text to Speech ===================
   tts_config:
     tts_model: 'edge_tts'
     # text to speech model options:
     #   'azure_tts', 'pyttsx3_tts', 'edge_tts', 'bark_tts',
     #   'cosyvoice_tts', 'melo_tts', 'coqui_tts', 'piper_tts',
-    #   'fish_api_tts', 'x_tts', 'gpt_sovits_tts', 'sherpa_onnx_tts'
+    #   'fish_api_tts', 'fish_audio_tts', 'x_tts', 'gpt_sovits_tts', 'sherpa_onnx_tts'
     #   'minimax_tts', 'elevenlabs_tts', 'cartesia_tts'
 
     azure_tts:
@@ -363,6 +368,13 @@ character_config:
       # Either 'normal' or 'balanced'. balance is faster but lower quality.
       latency: 'balanced'
       base_url: 'https://api.fish.audio'
+
+    fish_audio_tts:
+      api_key: '' # or set FISH_API_KEY environment variable
+      reference_id: '2eae72ac40a34d09917441fcb75f9703'
+      latency: 'balanced'
+      base_url: 'https://api.fish.audio'
+      format: 'wav'
 
     coqui_tts:
       # Name of the TTS model to use. If empty, will use default model
