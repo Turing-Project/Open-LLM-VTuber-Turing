@@ -333,6 +333,36 @@ class FishAPITTSConfig(I18nMixin):
     }
 
 
+class FishAudioTTSConfig(I18nMixin):
+    """Configuration for Fish Audio TTS (official SDK)."""
+
+    api_key: str = Field("", alias="api_key")
+    reference_id: str = Field(..., alias="reference_id")
+    latency: Literal["normal", "balanced"] = Field("balanced", alias="latency")
+    base_url: str = Field("https://api.fish.audio", alias="base_url")
+    format: Literal["wav", "pcm", "mp3", "opus"] = Field("wav", alias="format")
+
+    DESCRIPTIONS: ClassVar[dict[str, Description]] = {
+        "api_key": Description(
+            en="API key for Fish Audio (or set FISH_API_KEY env var)",
+            zh="Fish Audio API 密钥（也可通过 FISH_API_KEY 环境变量设置）",
+        ),
+        "reference_id": Description(
+            en="Voice reference ID from Fish Audio website",
+            zh="来自 Fish Audio 网站的语音参考 ID",
+        ),
+        "latency": Description(
+            en="Latency mode (normal or balanced)", zh="延迟模式（normal 或 balanced）"
+        ),
+        "base_url": Description(
+            en="Base URL for Fish Audio API", zh="Fish Audio API 的基础 URL"
+        ),
+        "format": Description(
+            en="Output audio format (wav, pcm, mp3, opus)", zh="输出音频格式"
+        ),
+    }
+
+
 class CoquiTTSConfig(I18nMixin):
     """Configuration for Coqui TTS."""
 
@@ -680,6 +710,45 @@ class CartesiaTTSConfig(I18nMixin):
     }
 
 
+class QwenTTSConfig(I18nMixin):
+    """Configuration for Alibaba Bailian (DashScope) Qwen-TTS."""
+
+    api_key: str = Field("", alias="api_key")
+    model: str = Field("qwen3-tts-flash", alias="model")
+    voice: str = Field("Cherry", alias="voice")
+    language_type: str = Field("Chinese", alias="language_type")
+    base_http_api_url: str = Field(
+        "https://dashscope.aliyuncs.com/api/v1", alias="base_http_api_url"
+    )
+    format: Literal["wav", "mp3"] = Field("wav", alias="format")
+
+    DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
+        "api_key": Description(
+            en="DashScope API key (or set DASHSCOPE_API_KEY env var)",
+            zh="百炼 DashScope API 密钥（也可通过 DASHSCOPE_API_KEY 环境变量设置）",
+        ),
+        "model": Description(
+            en="Qwen TTS model id (e.g., qwen3-tts-flash)",
+            zh="Qwen TTS 模型 ID（如 qwen3-tts-flash）",
+        ),
+        "voice": Description(
+            en="Voice name (e.g., Cherry); see Qwen-TTS docs for the full list",
+            zh="音色名称（如 Cherry）；完整列表见 Qwen-TTS 文档",
+        ),
+        "language_type": Description(
+            en="Language of the text (e.g., Chinese, English)",
+            zh="文本语种（如 Chinese、English）",
+        ),
+        "base_http_api_url": Description(
+            en="DashScope HTTP API base URL (Beijing region by default)",
+            zh="DashScope HTTP API 基础 URL（默认北京区域）",
+        ),
+        "format": Description(
+            en="Output audio format (wav or mp3)", zh="输出音频格式（wav 或 mp3）"
+        ),
+    }
+
+
 class TTSConfig(I18nMixin):
     """Configuration for Text-to-Speech."""
 
@@ -694,6 +763,7 @@ class TTSConfig(I18nMixin):
         "x_tts",
         "gpt_sovits_tts",
         "fish_api_tts",
+        "fish_audio_tts",
         "sherpa_onnx_tts",
         "siliconflow_tts",
         "openai_tts",  # Add openai_tts here
@@ -702,6 +772,7 @@ class TTSConfig(I18nMixin):
         "elevenlabs_tts",
         "cartesia_tts",
         "piper_tts",
+        "qwen_tts",
     ] = Field(..., alias="tts_model")
 
     azure_tts: Optional[AzureTTSConfig] = Field(None, alias="azure_tts")
@@ -714,6 +785,7 @@ class TTSConfig(I18nMixin):
     x_tts: Optional[XTTSConfig] = Field(None, alias="x_tts")
     gpt_sovits_tts: Optional[GPTSoVITSConfig] = Field(None, alias="gpt_sovits")
     fish_api_tts: Optional[FishAPITTSConfig] = Field(None, alias="fish_api_tts")
+    fish_audio_tts: Optional[FishAudioTTSConfig] = Field(None, alias="fish_audio_tts")
     sherpa_onnx_tts: Optional[SherpaOnnxTTSConfig] = Field(
         None, alias="sherpa_onnx_tts"
     )
@@ -726,6 +798,7 @@ class TTSConfig(I18nMixin):
     elevenlabs_tts: ElevenLabsTTSConfig | None = Field(None, alias="elevenlabs_tts")
     cartesia_tts: CartesiaTTSConfig | None = Field(None, alias="cartesia_tts")
     piper_tts: Optional[PiperTTSConfig] = Field(None, alias="piper_tts")
+    qwen_tts: Optional[QwenTTSConfig] = Field(None, alias="qwen_tts")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "tts_model": Description(
@@ -749,6 +822,9 @@ class TTSConfig(I18nMixin):
         "fish_api_tts": Description(
             en="Configuration for Fish API TTS", zh="Fish API TTS 配置"
         ),
+        "fish_audio_tts": Description(
+            en="Configuration for Fish Audio TTS", zh="Fish Audio TTS 配置"
+        ),
         "sherpa_onnx_tts": Description(
             en="Configuration for Sherpa Onnx TTS", zh="Sherpa Onnx TTS 配置"
         ),
@@ -769,6 +845,10 @@ class TTSConfig(I18nMixin):
             en="Configuration for Cartesia TTS", zh="Cartesia TTS 配置"
         ),
         "piper_tts": Description(en="Configuration for Piper TTS", zh="Piper TTS 配置"),
+        "qwen_tts": Description(
+            en="Configuration for Alibaba Bailian Qwen-TTS",
+            zh="阿里云百炼 Qwen-TTS 配置",
+        ),
     }
 
     @model_validator(mode="after")
@@ -796,6 +876,8 @@ class TTSConfig(I18nMixin):
             values.gpt_sovits_tts.model_validate(values.gpt_sovits_tts.model_dump())
         elif tts_model == "fish_api_tts" and values.fish_api_tts is not None:
             values.fish_api_tts.model_validate(values.fish_api_tts.model_dump())
+        elif tts_model == "fish_audio_tts" and values.fish_audio_tts is not None:
+            values.fish_audio_tts.model_validate(values.fish_audio_tts.model_dump())
         elif tts_model == "sherpa_onnx_tts" and values.sherpa_onnx_tts is not None:
             values.sherpa_onnx_tts.model_validate(values.sherpa_onnx_tts.model_dump())
         elif tts_model == "siliconflow_tts" and values.siliconflow_tts is not None:
@@ -813,4 +895,6 @@ class TTSConfig(I18nMixin):
 
         elif tts_model == "piper_tts" and values.piper_tts is not None:
             values.piper_tts.model_validate(values.piper_tts.model_dump())
+        elif tts_model == "qwen_tts" and values.qwen_tts is not None:
+            values.qwen_tts.model_validate(values.qwen_tts.model_dump())
         return values

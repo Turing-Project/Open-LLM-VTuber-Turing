@@ -58,5 +58,26 @@ class ASRFactory:
             from .sherpa_onnx_asr import VoiceRecognition as SherpaOnnxASR
 
             return SherpaOnnxASR(**kwargs)
+        elif system_name == "fish_audio_asr":
+            from .fish_audio_asr import VoiceRecognition as FishAudioASR
+
+            return FishAudioASR(
+                api_key=kwargs.get("api_key"),
+                base_url=kwargs.get("base_url", "https://api.fish.audio"),
+                language=kwargs.get("language"),
+            )
+        elif system_name == "qwen_asr":
+            from .qwen_asr import VoiceRecognition as QwenASR
+
+            return QwenASR(
+                api_key=kwargs.get("api_key"),
+                model=kwargs.get("model", "qwen3-asr-flash"),
+                base_url=kwargs.get(
+                    "base_url",
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                ),
+                language=kwargs.get("language"),
+                enable_itn=kwargs.get("enable_itn", False),
+            )
         else:
             raise ValueError(f"Unknown ASR system: {system_name}")

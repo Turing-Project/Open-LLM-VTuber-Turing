@@ -159,6 +159,28 @@ class FunASRConfig(I18nMixin):
     }
 
 
+class FishAudioASRConfig(I18nMixin):
+    """Configuration for Fish Audio ASR."""
+
+    api_key: str = Field("", alias="api_key")
+    base_url: str = Field("https://api.fish.audio", alias="base_url")
+    language: Optional[str] = Field(None, alias="language")
+
+    DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
+        "api_key": Description(
+            en="API key for Fish Audio (or set FISH_API_KEY env var)",
+            zh="Fish Audio API 密钥（也可通过 FISH_API_KEY 环境变量设置）",
+        ),
+        "base_url": Description(
+            en="Base URL for Fish Audio API", zh="Fish Audio API 的基础 URL"
+        ),
+        "language": Description(
+            en="Language code (leave empty for auto-detect)",
+            zh="语言代码（留空以自动检测）",
+        ),
+    }
+
+
 class GroqWhisperASRConfig(I18nMixin):
     """Configuration for Groq Whisper ASR."""
 
@@ -177,6 +199,40 @@ class GroqWhisperASRConfig(I18nMixin):
         "lang": Description(
             en="Language code (leave empty for auto-detect)",
             zh="语言代码（留空以自动检测）",
+        ),
+    }
+
+
+class QwenASRConfig(I18nMixin):
+    """Configuration for Alibaba Bailian (DashScope) Qwen-ASR."""
+
+    api_key: str = Field("", alias="api_key")
+    model: str = Field("qwen3-asr-flash", alias="model")
+    base_url: str = Field(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1", alias="base_url"
+    )
+    language: Optional[str] = Field(None, alias="language")
+    enable_itn: bool = Field(False, alias="enable_itn")
+
+    DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
+        "api_key": Description(
+            en="DashScope API key (or set DASHSCOPE_API_KEY env var)",
+            zh="百炼 DashScope API 密钥（也可通过 DASHSCOPE_API_KEY 环境变量设置）",
+        ),
+        "model": Description(
+            en="Qwen ASR model id (e.g., qwen3-asr-flash)",
+            zh="Qwen ASR 模型 ID（如 qwen3-asr-flash）",
+        ),
+        "base_url": Description(
+            en="OpenAI-compatible base URL for DashScope (Beijing region by default)",
+            zh="DashScope 的 OpenAI 兼容基础 URL（默认北京区域）",
+        ),
+        "language": Description(
+            en="Language hint (e.g., zh, en); leave empty for auto-detect",
+            zh="语言提示（如 zh、en）；留空以自动检测",
+        ),
+        "enable_itn": Description(
+            en="Enable inverse text normalization", zh="启用反向文本归一化"
         ),
     }
 
@@ -318,6 +374,8 @@ class ASRConfig(I18nMixin):
         "fun_asr",
         "groq_whisper_asr",
         "sherpa_onnx_asr",
+        "fish_audio_asr",
+        "qwen_asr",
     ] = Field(..., alias="asr_model")
     azure_asr: Optional[AzureASRConfig] = Field(None, alias="azure_asr")
     faster_whisper: Optional[FasterWhisperConfig] = Field(None, alias="faster_whisper")
@@ -330,6 +388,10 @@ class ASRConfig(I18nMixin):
     sherpa_onnx_asr: Optional[SherpaOnnxASRConfig] = Field(
         None, alias="sherpa_onnx_asr"
     )
+    fish_audio_asr: Optional[FishAudioASRConfig] = Field(
+        None, alias="fish_audio_asr"
+    )
+    qwen_asr: Optional[QwenASRConfig] = Field(None, alias="qwen_asr")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "asr_model": Description(
@@ -349,6 +411,13 @@ class ASRConfig(I18nMixin):
         ),
         "sherpa_onnx_asr": Description(
             en="Configuration for Sherpa Onnx ASR", zh="Sherpa Onnx ASR 配置"
+        ),
+        "fish_audio_asr": Description(
+            en="Configuration for Fish Audio ASR", zh="Fish Audio ASR 配置"
+        ),
+        "qwen_asr": Description(
+            en="Configuration for Alibaba Bailian Qwen-ASR",
+            zh="阿里云百炼 Qwen-ASR 配置",
         ),
     }
 
@@ -371,5 +440,9 @@ class ASRConfig(I18nMixin):
             values.groq_whisper_asr.model_validate(values.groq_whisper_asr.model_dump())
         elif asr_model == "SherpaOnnxASR" and values.sherpa_onnx_asr is not None:
             values.sherpa_onnx_asr.model_validate(values.sherpa_onnx_asr.model_dump())
+        elif asr_model == "fish_audio_asr" and values.fish_audio_asr is not None:
+            values.fish_audio_asr.model_validate(values.fish_audio_asr.model_dump())
+        elif asr_model == "qwen_asr" and values.qwen_asr is not None:
+            values.qwen_asr.model_validate(values.qwen_asr.model_dump())
 
         return values

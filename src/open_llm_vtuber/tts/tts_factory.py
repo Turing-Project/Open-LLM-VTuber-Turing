@@ -121,6 +121,29 @@ class TTSFactory:
                 latency=kwargs.get("latency"),
                 base_url=kwargs.get("base_url"),
             )
+        elif engine_type == "fish_audio_tts":
+            from .fish_audio_tts import TTSEngine as FishAudioTTSEngine
+
+            return FishAudioTTSEngine(
+                api_key=kwargs.get("api_key"),
+                reference_id=kwargs.get("reference_id"),
+                latency=kwargs.get("latency"),
+                base_url=kwargs.get("base_url", "https://api.fish.audio"),
+                audio_format=kwargs.get("format", "wav"),
+            )
+        elif engine_type == "qwen_tts":
+            from .qwen_tts import TTSEngine as QwenTTSEngine
+
+            return QwenTTSEngine(
+                api_key=kwargs.get("api_key"),
+                model=kwargs.get("model", "qwen3-tts-flash"),
+                voice=kwargs.get("voice", "Cherry"),
+                language_type=kwargs.get("language_type", "Chinese"),
+                base_http_api_url=kwargs.get(
+                    "base_http_api_url", "https://dashscope.aliyuncs.com/api/v1"
+                ),
+                audio_format=kwargs.get("format", "wav"),
+            )
         elif engine_type == "minimax_tts":
             from .minimax_tts import TTSEngine as MinimaxTTSEngine
 
