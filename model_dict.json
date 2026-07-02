@@ -72,8 +72,12 @@
             "disgust": 5,
             "playful": 6,
             "thinking": 7,
-            "speechless": 8
+            "speechless": 8,
+            "hurt": [1, 2]
         },
-        "tapMotions": {}
+        "tapMotions": {},
+        "actionMap": {
+            "stomp": "/gifs/Fuming.gif"
+        }
     }
 ]

@@ -1,4 +1,5 @@
 import json
+import random
 import chardet
 from loguru import logger
 
@@ -51,6 +52,13 @@ class Live2dModel:
         self.emo_str: str = " ".join([f"[{key}]," for key in self.emo_map.keys()])
         # emo_str is a string of the keys in the emoMap dictionary. The keys are enclosed in square brackets.
         # example: `"[fear], [anger], [disgust], [sadness], [joy], [neutral], [surprise]"`
+
+        # actionMap maps an action keyword (e.g. "stomp") to a GIF URL that the
+        # frontend overlays on top of the Live2D model. Optional per model.
+        self.action_map: dict = {
+            k.lower(): v for k, v in self.model_info.get("actionMap", {}).items()
+        }
+        self.action_str: str = " ".join([f"[{key}]," for key in self.action_map.keys()])
 
     def _load_file_content(self, file_path: str) -> str:
         """Load the content of a file with robust encoding handling."""
@@ -165,11 +173,35 @@ class Live2dModel:
             for key in self.emo_map.keys():
                 emo_tag = f"[{key}]"
                 if str_to_check[i : i + len(emo_tag)] == emo_tag:
-                    expression_list.append(self.emo_map[key])
+                    value = self.emo_map[key]
+                    # 若该情绪映射到多个表情索引(列表),则随机挑一个,
+                    # 用于让"挨揍/挨揍2"这类同一状态的多张表情交替出现。
+                    if isinstance(value, list):
+                        value = random.choice(value)
+                    expression_list.append(value)
                     i += len(emo_tag) - 1
                     break
             i += 1
         return expression_list
+
+    def extract_action(self, str_to_check: str):
+        """
+        Check the input string for any action keyword (defined in actionMap) and
+        return the GIF URL of the first one found, or None if none are present.
+
+        Parameters:
+            str_to_check (str): The string to check for action keywords.
+
+        Returns:
+            Optional[str]: The GIF URL of the first matched action, or None.
+        """
+        if not self.action_map:
+            return None
+        lower_str = str_to_check.lower()
+        for key, gif_url in self.action_map.items():
+            if f"[{key}]" in lower_str:
+                return gif_url
+        return None
 
     def remove_emotion_keywords(self, target_str: str) -> str:
         """

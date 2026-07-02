@@ -459,6 +459,15 @@ class ServiceContext:
                     "[<insert_emomap_keys>]", self.live2d_model.emo_str
                 )
 
+            if prompt_name == "gif_action_prompt":
+                # Only inject if the current model actually defines actions,
+                # otherwise skip so we don't advertise a nonexistent action.
+                if not self.live2d_model.action_str:
+                    continue
+                prompt_content = prompt_content.replace(
+                    "[<insert_action_keys>]", self.live2d_model.action_str
+                )
+
             if prompt_name == "mcp_prompt":
                 continue
 

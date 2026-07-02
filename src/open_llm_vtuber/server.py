@@ -11,7 +11,7 @@ import shutil
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from starlette.responses import Response, FileResponse
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
 from .routes import init_client_ws_route, init_webtool_routes, init_proxy_route
@@ -50,6 +50,37 @@ class AvatarStaticFiles(CORSStaticFiles):
         if not any(path.lower().endswith(ext) for ext in allowed_extensions):
             return Response("Forbidden file type", status_code=403)
         response = await super().get_response(path, scope)
+        return response
+
+
+class FrontendStaticFiles(CORSStaticFiles):
+    """
+    Serves the built frontend and injects the GIF-overlay script into index.html
+    on the fly, so the frontend submodule itself stays untouched.
+    """
+
+    _INJECT_TAG = '<script src="/overlay.js"></script>'
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        # Root ("") and "index.html" both resolve to the SPA entry document.
+        if path in ("", ".", "index.html") and getattr(response, "status_code", 0) == 200:
+            try:
+                index_path = os.path.join(str(self.directory), "index.html")
+                with open(index_path, "r", encoding="utf-8") as f:
+                    html = f.read()
+                if self._INJECT_TAG not in html:
+                    if "</head>" in html:
+                        html = html.replace(
+                            "</head>", self._INJECT_TAG + "</head>", 1
+                        )
+                    else:
+                        html = self._INJECT_TAG + html
+                injected = Response(html, media_type="text/html")
+                injected.headers["Access-Control-Allow-Origin"] = "*"
+                return injected
+            except Exception:
+                return response
         return response
 
 
@@ -141,10 +172,43 @@ class WebSocketServer:
             name="web_tool",
         )
 
-        # Mount main frontend last (as catch-all)
+        # Mount GIF assets used for action-overlay animations
+        if not os.path.exists("gifs"):
+            os.makedirs("gifs")
+        self.app.mount(
+            "/gifs",
+            CORSStaticFiles(directory="gifs"),
+            name="gifs",
+        )
+
+        # Serve the GIF-overlay script (injected into the frontend index.html).
+        async def _serve_overlay_js(request):
+            return FileResponse(
+                "overlay.js",
+                media_type="application/javascript",
+                headers={"Cache-Control": "no-store"},
+            )
+
+        self.app.add_route("/overlay.js", _serve_overlay_js)
+
+        # Temporary debug sink: the GIF overlay POSTs computed coordinates here
+        # so they land in the backend log (used to calibrate model->screen math).
+        async def _debug_log(request):
+            try:
+                raw = await request.body()
+                with open("/tmp/gif_debug.txt", "ab") as fp:
+                    fp.write(raw + b"\n")
+            except Exception:  # noqa: BLE001
+                pass
+            return Response("ok")
+
+        self.app.add_route("/debug-log", _debug_log, methods=["POST"])
+
+        # Mount main frontend last (as catch-all). FrontendStaticFiles injects
+        # the overlay script into index.html on the fly.
         self.app.mount(
             "/",
-            CORSStaticFiles(directory="frontend", html=True),
+            FrontendStaticFiles(directory="frontend", html=True),
             name="frontend",
         )
 
