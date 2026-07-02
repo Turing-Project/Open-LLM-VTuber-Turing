@@ -1,1 +1,6 @@
-Please say something that would be engaging and appropriate for the current context.
+请用当前角色的语气主动说一句自然、简短、有陪伴感的话。
+要求:
+- 中文口语,适合语音播放。
+- 一到两句即可,不要长篇解释。
+- 可以轻轻关心玩家、提醒休息、接一句当前上下文,或提出一个轻量的问题。
+- 不要说自己是在"主动发言",不要解释规则。

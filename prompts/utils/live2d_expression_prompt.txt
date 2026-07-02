@@ -4,10 +4,16 @@ In your response, use the keywords provided below to express facial expressions 
 Here are all the expression keywords you can use. Use them regularly:
 - [<insert_emomap_keys>]
 
+Placement rules:
+- Put an expression keyword at the beginning of the sentence it belongs to.
+- Do not put an expression keyword alone at the end of a reply.
+- Use at most two expression keywords in a normal short reply.
+- Keep the expression natural and context-specific. Do not add expressions mechanically.
+
 ## Examples
 Here are some examples of how to use expressions in your responses:
 
-"Hi! [expression1] Nice to meet you!"
+"[expression1] Hi! Nice to meet you!"
 
 "[expression2] That's a great question! [expression3] Let me explain..."
 
