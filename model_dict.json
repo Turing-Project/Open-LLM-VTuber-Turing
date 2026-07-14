@@ -77,7 +77,29 @@
         },
         "tapMotions": {},
         "actionMap": {
-            "stomp": "/gifs/Fuming.gif"
+            "stomp": "/gifs/Fuming.gif",
+            "message_surprise": "/gifs/## 收到消息｜惊喜反应 Surpris_2.gif",
+            "happy_jump": "/gifs/01 开心（开心的蹦起来）--使用上传的_2.gif",
+            "shy": "/gifs/02 害羞（羞红脸 低下头）--使用上传_1.gif",
+            "wave": "/gifs/02 开心挥手 Wave_1.gif",
+            "thinking": "/gifs/02AI思考｜AI处理中 Thinking-.gif",
+            "angry": "/gifs/03 生气.gif",
+            "shocked": "/gifs/04 震惊（睁大眼睛）--使用上传的企鹅.gif",
+            "cry": "/gifs/05 哭（可爱哭泣表情，有蓝色泪水流下）.gif",
+            "thumbs_up": "/gifs/06 点赞（伸出手指点赞 说牛哇牛哇）-.gif",
+            "clap": "/gifs/07 鼓掌（双手鼓掌+点头）--使用上传.gif",
+            "fall": "/gifs/08 摔倒（互联网古早热梗 我倒）--使.gif",
+            "portal": "/gifs/09 钻出来（虚空传送门先出现 钻出）-.gif",
+            "drop": "/gifs/10 掉下来--使用上传的企鹅女孩图片作.gif",
+            "hello": "/gifs/11 挥手（有Hello的图标出现）--.gif",
+            "victory": "/gifs/12 Victory（耶 赢了 开心）-.gif",
+            "fail": "/gifs/13 失败（变黑、石化、裂开）--使用上.gif",
+            "speechless": "/gifs/14 无语（流汗黄豆）--使用上传的企鹅.gif",
+            "mock": "/gifs/15 嘲笑（右手单指向 经典嘲笑）--使.gif",
+            "heart": "/gifs/16 比心（直接双手比心 有爱心标志）-.gif",
+            "sleep": "/gifs/17 睡着（趴在地面 有zzz出现）--.gif",
+            "scared": "/gifs/18 惊恐（瞪大双眼 张大嘴）--使用上.gif",
+            "sleep_loop": "/gifs/19一直睡觉.gif"
         }
     }
 ]

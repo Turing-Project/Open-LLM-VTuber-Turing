@@ -155,6 +155,8 @@ def scan_config_alts_directory(config_alts_dir: str) -> list[dict]:
     # Scan other configs
     for root, _, files in os.walk(config_alts_dir):
         for file in files:
+            if file.startswith("."):
+                continue
             if file.endswith(".yaml"):
                 config: dict = read_yaml(os.path.join(root, file))
                 config_files.append(
@@ -176,6 +178,8 @@ def scan_bg_directory() -> list[str]:
     bg_dir = "backgrounds"
     for root, _, files in os.walk(bg_dir):
         for file in files:
+            if file.startswith("."):
+                continue
             if file.endswith((".jpg", ".jpeg", ".png", ".gif")):
                 bg_files.append(file)
     return bg_files

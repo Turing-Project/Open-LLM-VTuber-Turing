@@ -20,6 +20,7 @@ avatars/*
 
 # macOS system files
 .DS_Store
+._*
 
 # Python files
 __pycache__/
@@ -47,6 +48,9 @@ logs/*
 
 # Cache and models
 cache/*
+build/
+dist/
+*.spec
 src/open_llm_vtuber/tts/asset
 src/open_llm_vtuber/tts/config
 src/open_llm_vtuber/asr/models*
@@ -55,6 +59,18 @@ asset
 models/*
 !models/piper_voice
 models/piper_voice/*
+
+# Large local media/model assets
+gifs/*
+!gifs/.gitkeep
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.onnx
+!src/open_llm_vtuber/asr/models/silero_vad.onnx
+*.gguf
+*.bin
 
 
 # Legacy and specific directories

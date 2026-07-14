@@ -4,7 +4,8 @@ from loguru import logger
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-PROMPT_DIR = current_dir
+external_prompt_dir = os.path.join(os.getcwd(), "prompts")
+PROMPT_DIR = external_prompt_dir if os.path.exists(external_prompt_dir) else current_dir
 PERSONA_PROMPT_DIR = os.path.join(PROMPT_DIR, "persona")
 UTIL_PROMPT_DIR = os.path.join(PROMPT_DIR, "utils")
 
