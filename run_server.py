@@ -4,6 +4,7 @@ import atexit
 import asyncio
 import argparse
 import subprocess
+import logging
 from pathlib import Path
 import tomli
 import uvicorn
@@ -27,6 +28,8 @@ def get_version() -> str:
 
 def init_logger(console_log_level: str = "INFO") -> None:
     logger.remove()
+    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "websockets"):
+        logging.getLogger(logger_name).setLevel(logging.INFO)
     # Console output
     logger.add(
         sys.stderr,
@@ -160,7 +163,7 @@ def run(console_log_level: str):
         app=server.app,
         host=server_config.host,
         port=server_config.port,
-        log_level=console_log_level.lower(),
+        log_level="info",
     )
 
 

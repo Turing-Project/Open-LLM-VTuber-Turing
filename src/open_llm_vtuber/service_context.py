@@ -86,7 +86,8 @@ class ServiceContext:
             f"    Agent Config: {json.dumps(self.character_config.agent_config.model_dump(), indent=6) if self.character_config.agent_config else 'None'}\n"
             f"  VAD Engine: {type(self.vad_engine).__name__ if self.vad_engine else 'Not Loaded'}\n"
             f"    Agent Config: {json.dumps(self.character_config.vad_config.model_dump(), indent=6) if self.character_config.vad_config else 'None'}\n"
-            f"  System Prompt: {self.system_prompt or 'Not Set'}\n"
+            f"  System Prompt: {'Set' if self.system_prompt else 'Not Set'}"
+            f"{f' ({len(self.system_prompt)} chars)' if self.system_prompt else ''}\n"
             f"  MCP Enabled: {'Yes' if self.mcp_client else 'No'}"
         )
 
@@ -244,7 +245,12 @@ class ServiceContext:
             self.character_config.agent_config.agent_settings.basic_memory_agent.mcp_enabled_servers,
         )
 
-        logger.debug(f"Loaded service context with cache: {character_config}")
+        logger.debug(
+            "Loaded service context with cache: "
+            f"conf_name={character_config.conf_name!r}, "
+            f"conf_uid={character_config.conf_uid!r}, "
+            f"character_name={character_config.character_name!r}"
+        )
 
     async def load_from_config(self, config: Config) -> None:
         """
@@ -394,7 +400,7 @@ class ServiceContext:
             )
 
             logger.debug(f"Agent choice: {agent_config.conversation_agent_choice}")
-            logger.debug(f"System prompt: {system_prompt}")
+            logger.debug(f"System prompt ready ({len(system_prompt or '')} chars)")
 
             # Save the current configuration
             self.character_config.agent_config = agent_config
@@ -443,7 +449,7 @@ class ServiceContext:
         Returns:
         - str: The system prompt with all tool prompts appended.
         """
-        logger.debug(f"constructing persona_prompt: '''{persona_prompt}'''")
+        original_prompt_length = len(persona_prompt or "")
 
         for prompt_name, prompt_file in self.system_config.tool_prompts.items():
             if (
@@ -473,8 +479,9 @@ class ServiceContext:
 
             persona_prompt += prompt_content
 
-        logger.debug("\n === System Prompt ===")
-        logger.debug(persona_prompt)
+        logger.debug(
+            f"System prompt constructed: {original_prompt_length} -> {len(persona_prompt)} chars"
+        )
 
         return persona_prompt
 
@@ -522,9 +529,11 @@ class ServiceContext:
                 }
                 new_config = validate_config(new_config)
                 await self.load_from_config(new_config)  # Await the async load
-                logger.debug(f"New config: {self}")
                 logger.debug(
-                    f"New character config: {self.character_config.model_dump()}"
+                    "New character config loaded: "
+                    f"conf_name={self.character_config.conf_name!r}, "
+                    f"conf_uid={self.character_config.conf_uid!r}, "
+                    f"character_name={self.character_config.character_name!r}"
                 )
 
                 # Send responses to client

@@ -1,4 +1,6 @@
 import base64
+import os
+from typing import Any
 from pydub import AudioSegment
 from pydub.utils import make_chunks
 from ..agent.output_types import Actions
@@ -30,7 +32,8 @@ def prepare_audio_payload(
     display_text: DisplayText = None,
     actions: Actions = None,
     forwarded: bool = False,
-) -> dict[str, any]:
+    perf_trace: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Prepares the audio payload for sending to a broadcast endpoint.
     If audio_path is None, returns a payload with audio=None for silent display.
@@ -57,11 +60,17 @@ def prepare_audio_payload(
             "display_text": display_text,
             "actions": actions.to_dict() if actions else None,
             "forwarded": forwarded,
+            "perf_trace": perf_trace,
         }
 
     try:
-        audio = AudioSegment.from_file(audio_path)
-        audio_bytes = audio.export(format="wav").read()
+        if os.path.splitext(audio_path)[1].lower() == ".wav":
+            audio = AudioSegment.from_file(audio_path, format="wav")
+            with open(audio_path, "rb") as audio_file:
+                audio_bytes = audio_file.read()
+        else:
+            audio = AudioSegment.from_file(audio_path)
+            audio_bytes = audio.export(format="wav").read()
     except Exception as e:
         raise ValueError(
             f"Error loading or converting generated audio file to wav file '{audio_path}': {e}"
@@ -77,6 +86,7 @@ def prepare_audio_payload(
         "display_text": display_text,
         "actions": actions.to_dict() if actions else None,
         "forwarded": forwarded,
+        "perf_trace": perf_trace,
     }
 
     return payload

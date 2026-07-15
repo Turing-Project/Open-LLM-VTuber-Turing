@@ -67,6 +67,8 @@ async def handle_conversation_trigger(
     else:  # mic-audio-end
         user_input = received_data_buffers[client_uid]
         received_data_buffers[client_uid] = np.array([])
+        metadata = metadata or {}
+        metadata["perf_trace"] = data.get("perf_trace") or {}
 
     images = data.get("images")
     session_emoji = np.random.choice(EMOJI_LIST)

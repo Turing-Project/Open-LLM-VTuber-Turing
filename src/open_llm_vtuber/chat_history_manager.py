@@ -258,7 +258,7 @@ def get_history_list(conf_uid: str) -> List[dict]:
 
     try:
         for filename in os.listdir(conf_dir):
-            if not filename.endswith(".json"):
+            if filename.startswith("._") or not filename.endswith(".json"):
                 continue
 
             history_uid = filename[:-5]

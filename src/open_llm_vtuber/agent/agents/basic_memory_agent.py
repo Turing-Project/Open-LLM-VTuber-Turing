@@ -118,7 +118,7 @@ class BasicMemoryAgent(AgentInterface):
 
     def set_system(self, system: str):
         """Set the system prompt."""
-        logger.debug(f"Memory Agent: Setting system prompt: '''{system}'''")
+        logger.debug(f"Memory Agent: Setting system prompt ({len(system or '')} chars)")
 
         if self.interrupt_method == "user":
             system = f"{system}\n\nIf you received `[interrupted by user]` signal, you were interrupted."
@@ -669,6 +669,27 @@ class BasicMemoryAgent(AgentInterface):
         chat_func_decorated = self._chat_function_factory()
         async for output in chat_func_decorated(input_data):
             yield output
+
+    async def stream_raw_text(self, input_data: BatchInput) -> AsyncIterator[str]:
+        """Stream raw LLM text chunks without sentence/TTS processing."""
+        self.reset_interrupt()
+        self.prompt_mode_flag = False
+        messages = self._to_messages(input_data)
+        complete_response = ""
+
+        async for event in self._llm.chat_completion(messages, self._system):
+            text_chunk = ""
+            if isinstance(event, dict) and event.get("type") == "text_delta":
+                text_chunk = event.get("text", "")
+            elif isinstance(event, str):
+                text_chunk = event
+
+            if text_chunk:
+                complete_response += text_chunk
+                yield text_chunk
+
+        if complete_response:
+            self._add_message(complete_response, "assistant")
 
     def reset_interrupt(self) -> None:
         """Reset interrupt flag."""
