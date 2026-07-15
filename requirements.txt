@@ -1189,3 +1189,4 @@ win32-setctime==1.2.0 ; sys_platform == 'win32'
     # via loguru
 yarl==1.22.0
     # via aiohttp
+fish-audio-sdk
