@@ -11,6 +11,7 @@ import numpy as np
 from src.open_llm_vtuber.conversations.single_conversation import (
     process_single_conversation,
 )
+from src.open_llm_vtuber.agent.output_types import Actions, DisplayText, SentenceOutput
 from src.open_llm_vtuber.message_handler import message_handler
 
 
@@ -33,6 +34,19 @@ class FakeAgent:
         self.chat_called = True
         if False:
             yield None
+
+
+class FakeSentenceAgent:
+    def __init__(self, sentences):
+        self.sentences = sentences
+
+    async def chat(self, batch_input):
+        for sentence in self.sentences:
+            yield SentenceOutput(
+                display_text=DisplayText(text=sentence),
+                tts_text=sentence,
+                actions=Actions(),
+            )
 
 
 class StreamingTTS:
@@ -175,6 +189,37 @@ class StreamingTTSTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("audio-stream-end", message_types)
         self.assertNotIn("audio-stream-error", message_types)
         self.assertFalse(agent.chat_called)
+
+    async def test_sentence_path_filters_reasoning_markup_before_tts(self):
+        agent = FakeSentenceAgent(
+            [
+                "[thinking]The player is looking at a repository.",
+                "[neutral] 哦？在看项目仓库呢。",
+            ]
+        )
+        sent_messages = []
+
+        async def websocket_send(raw_message):
+            message = json.loads(raw_message)
+            sent_messages.append(message)
+            if message["type"] == "backend-synth-complete":
+                asyncio.create_task(self._send_playback_complete_soon())
+
+        response = await process_single_conversation(
+            context=make_context(agent, EmptyStreamingTTS()),
+            websocket_send=websocket_send,
+            client_uid=self.client_uid,
+            user_input="game watch prompt",
+            metadata={"skip_history": True},
+        )
+
+        display_texts = [
+            message.get("display_text", {}).get("text")
+            for message in sent_messages
+            if message.get("type") == "audio"
+        ]
+        self.assertEqual(response, "哦？在看项目仓库呢。")
+        self.assertEqual(display_texts, ["哦？在看项目仓库呢。"])
 
     async def _send_playback_complete_soon(self):
         await asyncio.sleep(0.01)

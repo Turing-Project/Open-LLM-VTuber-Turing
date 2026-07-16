@@ -3,6 +3,17 @@ import unicodedata
 from loguru import logger
 from ..translate.translate_interface import TranslateInterface
 
+THINKING_MARKUP_TAGS = {
+    "think",
+    "thinking",
+    "thought",
+    "thoughts",
+    "analysis",
+    "reasoning",
+    "chain_of_thought",
+    "chain-of-thought",
+}
+
 
 def tts_filter(
     text: str,
@@ -194,3 +205,72 @@ def filter_asterisks(text: str) -> str:
     filtered_text = re.sub(r"\s+", " ", filtered_text).strip()
 
     return filtered_text
+
+
+class StreamingReasoningMarkupFilter:
+    """Remove streamed reasoning tags and hidden reasoning text before TTS."""
+
+    def __init__(self) -> None:
+        self._pending = ""
+        self._suppressing = False
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return ""
+
+        source = self._pending + text
+        self._pending = ""
+        output: list[str] = []
+        index = 0
+
+        while index < len(source):
+            char = source[index]
+            if char == "[":
+                end = source.find("]", index + 1)
+                if end == -1:
+                    self._pending = source[index:]
+                    break
+                self._handle_square_tag(source[index + 1 : end])
+                index = end + 1
+                continue
+
+            if char == "<":
+                end = source.find(">", index + 1)
+                if end == -1:
+                    self._pending = source[index:]
+                    break
+                self._handle_angle_tag(source[index + 1 : end])
+                index = end + 1
+                continue
+
+            if not self._suppressing:
+                output.append(char)
+            index += 1
+
+        return "".join(output)
+
+    def flush(self) -> str:
+        pending = self._pending
+        self._pending = ""
+        if self._suppressing or pending.startswith(("[", "<")):
+            return ""
+        return pending
+
+    def _handle_square_tag(self, tag: str) -> None:
+        normalized = tag.strip().lower().replace(" ", "_")
+        if normalized in THINKING_MARKUP_TAGS:
+            self._suppressing = True
+            return
+        # Other square-bracket tags are treated as visible-state markers
+        # such as [neutral]; discard the marker and resume visible speech.
+        self._suppressing = False
+
+    def _handle_angle_tag(self, tag: str) -> None:
+        normalized = tag.strip().lower().replace(" ", "_")
+        if normalized.startswith("/"):
+            normalized = normalized[1:]
+            if normalized in THINKING_MARKUP_TAGS:
+                self._suppressing = False
+            return
+        if normalized in THINKING_MARKUP_TAGS:
+            self._suppressing = True

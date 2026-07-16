@@ -20,6 +20,7 @@ from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
 from ..chat_history_manager import store_message
 from ..service_context import ServiceContext
+from ..utils.tts_preprocessor import StreamingReasoningMarkupFilter
 
 # Import necessary types from agent outputs
 from ..agent.output_types import SentenceOutput, AudioOutput, DisplayText
@@ -89,12 +90,14 @@ async def process_single_conversation(
         token_queue: asyncio.Queue[Optional[Any]] = asyncio.Queue()
         response_chunks: List[str] = []
         first_llm_chunk_seen = False
+        reasoning_filter = StreamingReasoningMarkupFilter()
 
         async def produce_llm_tokens() -> None:
             nonlocal first_llm_chunk_seen
             try:
                 log_timeline("发送LLM")
                 async for token in context.agent_engine.stream_raw_text(batch_input):
+                    token = reasoning_filter.feed(token)
                     if token:
                         if not first_llm_chunk_seen:
                             first_llm_chunk_seen = True
@@ -105,6 +108,16 @@ async def process_single_conversation(
                         response_chunks.append(token)
                         await token_queue.put(token)
             finally:
+                remaining_text = reasoning_filter.flush()
+                if remaining_text:
+                    if not first_llm_chunk_seen:
+                        first_llm_chunk_seen = True
+                        log_timeline("接收到LLM回复")
+                        logger.info(
+                            f"[stream-tts] request={request_id} first LLM text received"
+                        )
+                    response_chunks.append(remaining_text)
+                    await token_queue.put(remaining_text)
                 await token_queue.put(None)
 
         async def fish_text_stream():
@@ -316,6 +329,7 @@ async def process_single_conversation(
             full_response = streamed_response
         else:
             llm_response_logged = False
+            reasoning_filter = StreamingReasoningMarkupFilter()
             try:
                 log_timeline("发送LLM")
                 # agent.chat yields Union[SentenceOutput, Dict[str, Any]]
@@ -333,6 +347,15 @@ async def process_single_conversation(
                         await websocket_send(json.dumps(output_item))
 
                     elif isinstance(output_item, (SentenceOutput, AudioOutput)):
+                        if isinstance(output_item, SentenceOutput):
+                            clean_text = reasoning_filter.feed(
+                                output_item.display_text.text
+                            ).strip()
+                            if not clean_text:
+                                continue
+                            output_item.display_text.text = clean_text
+                            output_item.tts_text = clean_text
+
                         if not llm_response_logged:
                             log_timeline("接收到LLM回复")
                             llm_response_logged = True
