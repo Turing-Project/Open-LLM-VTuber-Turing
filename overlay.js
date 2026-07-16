@@ -48,6 +48,10 @@
     "18 惊恐（瞪大双眼 张大嘴）--使用上.gif": { clip: { left: 179, top: 39, width: 451, height: 1040 }, durationMs: 5040 },
     "19一直睡觉.gif": { clip: { left: 67, top: 180, width: 679, height: 866 }, durationMs: 2000 }
   };
+  var GIF_TEST_URLS = Object.keys(GIF_GEOMETRIES).map(function (fileName) {
+    return "/gifs/" + fileName;
+  });
+  var GIF_TEST_GAP_MS = 1000;
 
   // In the browser client the page is same-origin as the backend, so relative
   // GIF URLs ("/gifs/x.gif") work directly. In the Electron pet the page is a
@@ -306,19 +310,34 @@
     }, durationMs || geometry.durationMs || DEFAULT_DURATION);
   }
 
-  // Manual trigger (for testing / interaction): double-click anywhere plays
-  // the action GIF. Also serves as a diagnostic independent of the AI path.
+  function playAllGifs() {
+    var delay = 0;
+    GIF_TEST_URLS.forEach(function (url) {
+      var durationMs = getGifGeometry(url).durationMs;
+      setTimeout(function () {
+        playGif(url, durationMs);
+      }, delay);
+      delay += durationMs + GIF_TEST_GAP_MS;
+    });
+  }
+
+  // Manual trigger (for testing / interaction): double-click anywhere plays all
+  // action GIFs once with a 1s gap. Also serves as a diagnostic independent of
+  // the AI path.
   document.addEventListener("dblclick", function () {
-    console.log("[gif-overlay] dblclick -> playGif");
-    playGif("/gifs/Fuming.gif", DEFAULT_DURATION);
+    console.log("[gif-overlay] dblclick -> playAllGifs");
+    playAllGifs();
   });
 
-  // Diagnostic hooks: call playStompGif() from the DevTools console to test
-  // rendering directly (bypasses click-through / WebSocket path entirely).
+  window.addEventListener("gif-overlay-play-all", playAllGifs);
+
+  // Diagnostic hooks: call playAllGifs() or playStompGif() from the DevTools
+  // console to test rendering directly.
+  window.playAllGifs = playAllGifs;
   window.playStompGif = function () {
     playGif("/gifs/Fuming.gif", DEFAULT_DURATION);
   };
-  console.log("[gif-overlay] loaded. Try playStompGif() in the console.");
+  console.log("[gif-overlay] loaded. Try playAllGifs() in the console.");
 
   function handleMessage(data) {
     try {
