@@ -33,14 +33,16 @@ async def handle_conversation_trigger(
     metadata = None
 
     if msg_type == "ai-speak-signal":
+        incoming_metadata = data.get("metadata") or {}
+        is_game_watch = bool(incoming_metadata.get("game_watch"))
         try:
             # Get proactive speak prompt from config
-            prompt_name = "proactive_speak_prompt"
+            prompt_name = "game_watch_prompt" if is_game_watch else "proactive_speak_prompt"
             prompt_file = context.system_config.tool_prompts.get(prompt_name)
             if prompt_file:
                 user_input = prompt_loader.load_util(prompt_file)
             else:
-                logger.warning("Proactive speak prompt not configured, using default")
+                logger.warning(f"{prompt_name} not configured, using default")
                 user_input = "Please say something."
         except Exception as e:
             logger.error(f"Error loading proactive speak prompt: {e}")
@@ -52,6 +54,7 @@ async def handle_conversation_trigger(
             "proactive_speak": True,
             "skip_memory": True,  # Skip storing in AI's internal memory
             "skip_history": True,  # Skip storing in local conversation history
+            **incoming_metadata,
         }
 
         await websocket.send_text(
