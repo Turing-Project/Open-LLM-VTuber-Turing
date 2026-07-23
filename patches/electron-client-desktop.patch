@@ -1,0 +1,834 @@
+From 778e92d4a00a665b67d07c9ee6b2536160341af4 Mon Sep 17 00:00:00 2001
+From: Songjiacheng <herbertsongjc@qq.com>
+Date: Fri, 24 Jul 2026 03:35:03 +0800
+Subject: [PATCH] feat(desktop): bundle backend and restore pet interactions
+
+---
+ .gitignore                                    |   4 +-
+ electron-builder.yml                          |  16 +-
+ src/main/backend-manager.ts                   | 107 +++++
+ src/main/index.ts                             |  41 +-
+ src/renderer/index.html                       |   2 +
+ src/renderer/public/overlay.js                | 404 ++++++++++++++++++
+ src/renderer/src/components/canvas/live2d.tsx |   2 +
+ .../src/context/live2d-config-context.tsx     |   3 +
+ .../hooks/canvas/use-live2d-mouse-tracking.ts | 103 +++++
+ 9 files changed, 673 insertions(+), 9 deletions(-)
+ create mode 100644 src/main/backend-manager.ts
+ create mode 100644 src/renderer/public/overlay.js
+ create mode 100644 src/renderer/src/hooks/canvas/use-live2d-mouse-tracking.ts
+
+diff --git a/.gitignore b/.gitignore
+index 8960c0e..8aeeac0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -56,6 +56,8 @@ packages/react-devtools-extensions/.tempUserDataDir
+ *.pyc
+ .grunt
+ out
++backend
++.npm-cache
+ 
+ # Cursor files
+-.cursorrules
+\ No newline at end of file
++.cursorrules
+diff --git a/electron-builder.yml b/electron-builder.yml
+index 697cba9..fd6ab52 100644
+--- a/electron-builder.yml
++++ b/electron-builder.yml
+@@ -1,5 +1,5 @@
+-appId: com.electron.app
+-productName: open-llm-vtuber-electron
++appId: com.openllmvtuber.desktop
++productName: Open-LLM-VTuber
+ directories:
+   buildResources: resources
+   output: release/${version}
+@@ -15,11 +15,17 @@ files:
+   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+ asarUnpack:
+   - resources/**
++extraResources:
++  - from: backend
++    to: backend
++    filter:
++      - '**/*'
+ win:
+-  executableName: open-llm-vtuber-electron
++  executableName: Open-LLM-VTuber
+   icon: resources/icon.ico
++  signAndEditExecutable: false
+ nsis:
+-  artifactName: ${name}-${version}-setup.${ext}
++  artifactName: Open-LLM-VTuber-Electron-${version}-setup.${ext}
+   shortcutName: ${productName}
+   uninstallDisplayName: ${productName}
+   createDesktopShortcut: always
+@@ -54,4 +60,4 @@ publish:
+   releaseType: release
+   publishAutoUpdate: false
+ electronDownload:
+-  mirror: https://npmmirror.com/mirrors/electron/
+\ No newline at end of file
++  mirror: https://npmmirror.com/mirrors/electron/
+diff --git a/src/main/backend-manager.ts b/src/main/backend-manager.ts
+new file mode 100644
+index 0000000..78a2334
+--- /dev/null
++++ b/src/main/backend-manager.ts
+@@ -0,0 +1,107 @@
++import { app } from 'electron';
++import {
++  appendFileSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync,
++} from 'fs';
++import { createConnection } from 'net';
++import { join } from 'path';
++import { ChildProcess, spawn, spawnSync } from 'child_process';
++
++const BACKEND_VERSION = '1.2.1-electron-1';
++
++export class BackendManager {
++  private process: ChildProcess | null = null;
++
++  private readonly dataRoot = join(app.getPath('userData'), 'backend');
++
++  private readonly logPath = join(app.getPath('userData'), 'backend.log');
++
++  private get templateRoot(): string {
++    return app.isPackaged
++      ? join(process.resourcesPath, 'backend')
++      : join(app.getAppPath(), 'backend');
++  }
++
++  private prepareBackend(): void {
++    const marker = join(this.dataRoot, '.electron-backend-version');
++    if (existsSync(marker)
++      && readFileSync(marker, 'utf8').trim() === BACKEND_VERSION) return;
++
++    if (!existsSync(this.templateRoot)) {
++      throw new Error(`Backend resources not found: ${this.templateRoot}`);
++    }
++
++    mkdirSync(this.dataRoot, { recursive: true });
++    const configPath = join(this.dataRoot, 'conf.yaml');
++    const existingConfig = existsSync(configPath) ? readFileSync(configPath) : null;
++    cpSync(this.templateRoot, this.dataRoot, { recursive: true, force: true });
++    if (existingConfig) writeFileSync(configPath, existingConfig);
++    writeFileSync(marker, BACKEND_VERSION, 'utf8');
++  }
++
++  private readPort(): number {
++    const config = readFileSync(join(this.dataRoot, 'conf.yaml'), 'utf8');
++    const systemConfig = config.split('character_config:', 1)[0];
++    const match = systemConfig.match(/^\s*port:\s*(\d+)/m);
++    return match ? Number(match[1]) : 12393;
++  }
++
++  private portIsOpen(port: number): Promise<boolean> {
++    return new Promise((resolve) => {
++      const socket = createConnection({ host: '127.0.0.1', port });
++      socket.setTimeout(500);
++      socket.once('connect', () => {
++        socket.destroy();
++        resolve(true);
++      });
++      const fail = (): void => {
++        socket.destroy();
++        resolve(false);
++      };
++      socket.once('error', fail);
++      socket.once('timeout', fail);
++    });
++  }
++
++  async start(): Promise<void> {
++    this.prepareBackend();
++    const port = this.readPort();
++    if (await this.portIsOpen(port)) return;
++
++    const uv = join(this.dataRoot, 'runtime', 'uv.exe');
++    if (!existsSync(uv)) throw new Error(`uv.exe not found: ${uv}`);
++
++    const runtimeRoot = join(app.getPath('userData'), 'runtime');
++    mkdirSync(runtimeRoot, { recursive: true });
++    appendFileSync(this.logPath, `\n[Electron] Starting backend at ${new Date().toISOString()}\n`);
++    const logFd = openSync(this.logPath, 'a');
++    this.process = spawn(uv, ['run', 'run_server.py'], {
++      cwd: this.dataRoot,
++      windowsHide: true,
++      stdio: ['ignore', logFd, logFd],
++      env: {
++        ...process.env,
++        UV_CACHE_DIR: join(runtimeRoot, 'uv-cache'),
++        UV_PYTHON_INSTALL_DIR: join(runtimeRoot, 'python'),
++      },
++    });
++
++    const deadline = Date.now() + 15 * 60 * 1000;
++    while (Date.now() < deadline) {
++      if (await this.portIsOpen(port)) return;
++      if (this.process.exitCode !== null) {
++        throw new Error(`Backend exited early. See log: ${this.logPath}`);
++      }
++      await new Promise((resolve) => setTimeout(resolve, 500));
++    }
++    throw new Error(`Backend startup timed out. See log: ${this.logPath}`);
++  }
++
++  stop(): void {
++    if (!this.process?.pid || this.process.exitCode !== null) return;
++    spawnSync('taskkill', ['/PID', String(this.process.pid), '/T', '/F'], {
++      windowsHide: true,
++      stdio: 'ignore',
++    });
++    this.process = null;
++  }
++}
+diff --git a/src/main/index.ts b/src/main/index.ts
+index e1e1bf6..3679c4f 100644
+--- a/src/main/index.ts
++++ b/src/main/index.ts
+@@ -1,11 +1,15 @@
+ /* eslint-disable no-shadow */
+-import { app, ipcMain, globalShortcut, desktopCapturer } from "electron";
++import {
++  app, BrowserWindow, dialog, ipcMain, globalShortcut, desktopCapturer,
++} from "electron";
+ import { electronApp, optimizer } from "@electron-toolkit/utils";
+ import { WindowManager } from "./window-manager";
+ import { MenuManager } from "./menu-manager";
++import { BackendManager } from "./backend-manager";
+ 
+ let windowManager: WindowManager;
+ let menuManager: MenuManager;
++let backendManager: BackendManager;
+ let isQuitting = false;
+ 
+ function setupIPC(): void {
+@@ -73,9 +77,38 @@ function setupIPC(): void {
+   });
+ }
+ 
+-app.whenReady().then(() => {
++app.whenReady().then(async () => {
+   electronApp.setAppUserModelId("com.electron");
+ 
++  const splash = new BrowserWindow({
++    width: 460,
++    height: 220,
++    frame: false,
++    resizable: false,
++    center: true,
++    backgroundColor: '#111111',
++    webPreferences: { sandbox: true },
++  });
++  await splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
++    <html><body style="margin:0;background:#111;color:#fff;font-family:Segoe UI,sans-serif;display:flex;height:100vh;align-items:center;justify-content:center;text-align:center">
++      <div><h2>Open-LLM-VTuber</h2><p>正在启动 AI 后端…</p><p style="color:#aaa;font-size:13px">首次启动需要准备运行环境，请耐心等待</p></div>
++    </body></html>
++  `)}`);
++
++  backendManager = new BackendManager();
++  try {
++    await backendManager.start();
++  } catch (error) {
++    await dialog.showMessageBox(splash, {
++      type: 'error',
++      title: '后端启动失败',
++      message: 'Open-LLM-VTuber 后端未能启动',
++      detail: error instanceof Error ? error.message : String(error),
++    });
++    splash.destroy();
++    app.quit();
++    return;
++  }
+   windowManager = new WindowManager();
+   menuManager = new MenuManager((mode) => windowManager.setWindowMode(mode));
+ 
+@@ -86,6 +119,7 @@ app.whenReady().then(() => {
+       height: 30,
+     },
+   });
++  splash.destroy();
+   menuManager.createTray();
+ 
+   window.on("close", (event) => {
+@@ -141,6 +175,7 @@ app.on("window-all-closed", () => {
+ 
+ app.on("before-quit", () => {
+   isQuitting = true;
+-  menuManager.destroy();
++  backendManager?.stop();
++  menuManager?.destroy();
+   globalShortcut.unregisterAll();
+ });
+diff --git a/src/renderer/index.html b/src/renderer/index.html
+index 62e4299..3e98b74 100644
+--- a/src/renderer/index.html
++++ b/src/renderer/index.html
+@@ -7,6 +7,8 @@
+ 
+   <body>
+     <div id="root"></div>
++    <script>window.__GIF_BASE__ = 'http://127.0.0.1:12393';</script>
++    <script src="./overlay.js"></script>
+     <script type="module" src="./src/main.tsx"></script>
+   </body>
+ </html>
+diff --git a/src/renderer/public/overlay.js b/src/renderer/public/overlay.js
+new file mode 100644
+index 0000000..11279e8
+--- /dev/null
++++ b/src/renderer/public/overlay.js
+@@ -0,0 +1,404 @@
++/*
++ * GIF action overlay for Open-LLM-VTuber.
++ *
++ * Injected into the frontend index.html by the backend (FrontendStaticFiles).
++ * It sniffs the WebSocket messages the React app receives; when a message of
++ * type "audio" carries `actions.gif`, it temporarily hides the Live2D canvas,
++ * plays the GIF over the model area, then restores the Live2D after the GIF's
++ * duration. This lets the AI trigger a full-body action animation (e.g. an
++ * exasperated foot-stomp) that Live2D itself can't do.
++ *
++ * No React source changes / no rebuild required.
++ */
++(function () {
++  "use strict";
++
++  var OVERLAY_ID = "__gif_action_overlay__";
++  var DEFAULT_DURATION = 5040; // ms; Fuming.gif single loop (63 frames). Overridable via actions.gif_duration_ms
++  var playing = false;
++  var GIF_CANVAS = { width: 834, height: 1112 };
++  var GIF_BODY_BOUNDS = { left: 204, top: 59, width: 407, height: 1019 };
++  var DEFAULT_GIF_GEOMETRY = {
++    body: GIF_BODY_BOUNDS,
++    clip: { left: 110, top: 56, width: 592, height: 1022 },
++    durationMs: DEFAULT_DURATION
++  };
++  var GIF_GEOMETRIES = {
++    "Fuming.gif": { clip: { left: 110, top: 56, width: 592, height: 1022 }, durationMs: 5040 },
++    "## 收到消息｜惊喜反应 Surpris_2.gif": { clip: { left: 132, top: 21, width: 541, height: 1064 }, durationMs: 5040 },
++    "01 开心（开心的蹦起来）--使用上传的_2.gif": { clip: { left: 54, top: 16, width: 711, height: 1062 }, durationMs: 5040 },
++    "02 害羞（羞红脸 低下头）--使用上传_1.gif": { clip: { left: 184, top: 61, width: 446, height: 1018 }, durationMs: 5040 },
++    "02 开心挥手 Wave_1.gif": { clip: { left: 72, top: 60, width: 590, height: 1019 }, durationMs: 5040 },
++    "02AI思考｜AI处理中 Thinking-.gif": { clip: { left: 153, top: 59, width: 510, height: 1019 }, durationMs: 5040 },
++    "03 生气.gif": { clip: { left: 110, top: 55, width: 598, height: 1023 }, durationMs: 5040 },
++    "04 震惊（睁大眼睛）--使用上传的企鹅.gif": { clip: { left: 92, top: 58, width: 622, height: 1020 }, durationMs: 5040 },
++    "05 哭（可爱哭泣表情，有蓝色泪水流下）.gif": { clip: { left: 113, top: 55, width: 573, height: 1024 }, durationMs: 5040 },
++    "06 点赞（伸出手指点赞 说牛哇牛哇）-.gif": { clip: { left: 175, top: 57, width: 506, height: 1021 }, durationMs: 5040 },
++    "07 鼓掌（双手鼓掌+点头）--使用上传.gif": { clip: { left: 89, top: 53, width: 625, height: 1025 }, durationMs: 5040 },
++    "08 摔倒（互联网古早热梗 我倒）--使.gif": { clip: { left: 0, top: 52, width: 830, height: 1027 }, durationMs: 5040 },
++    "09 钻出来（虚空传送门先出现 钻出）-.gif": { clip: { left: 0, top: 35, width: 817, height: 1044 }, durationMs: 5040 },
++    "10 掉下来--使用上传的企鹅女孩图片作.gif": { clip: { left: 18, top: 0, width: 774, height: 1084 }, durationMs: 5040 },
++    "11 挥手（有Hello的图标出现）--.gif": { clip: { left: 172, top: 55, width: 581, height: 1024 }, durationMs: 5040 },
++    "12 Victory（耶 赢了 开心）-.gif": { clip: { left: 124, top: 52, width: 561, height: 1027 }, durationMs: 5040 },
++    "13 失败（变黑、石化、裂开）--使用上.gif": { clip: { left: 204, top: 59, width: 407, height: 1019 }, durationMs: 5040 },
++    "14 无语（流汗黄豆）--使用上传的企鹅.gif": { clip: { left: 184, top: 59, width: 442, height: 1019 }, durationMs: 5040 },
++    "15 嘲笑（右手单指向 经典嘲笑）--使.gif": { clip: { left: 108, top: 57, width: 554, height: 1021 }, durationMs: 5040 },
++    "16 比心（直接双手比心 有爱心标志）-.gif": { clip: { left: 125, top: 56, width: 621, height: 1026 }, durationMs: 5040 },
++    "17 睡着（趴在地面 有zzz出现）--.gif": { clip: { left: 67, top: 56, width: 741, height: 1023 }, durationMs: 5040 },
++    "18 惊恐（瞪大双眼 张大嘴）--使用上.gif": { clip: { left: 179, top: 39, width: 451, height: 1040 }, durationMs: 5040 },
++    "19一直睡觉.gif": { clip: { left: 67, top: 180, width: 679, height: 866 }, durationMs: 2000 }
++  };
++  var GIF_TEST_URLS = Object.keys(GIF_GEOMETRIES).map(function (fileName) {
++    return "/gifs/" + fileName;
++  });
++  var GIF_TEST_GAP_MS = 1000;
++
++  // In the browser client the page is same-origin as the backend, so relative
++  // GIF URLs ("/gifs/x.gif") work directly. In the Electron pet the page is a
++  // local file, so window.__GIF_BASE__ is set to the backend origin and we
++  // prepend it to root-relative URLs.
++  function resolveUrl(u) {
++    if (u && u.charAt(0) === "/" && window.__GIF_BASE__) {
++      return window.__GIF_BASE__ + u;
++    }
++    return u;
++  }
++
++  function getGifFileName(url) {
++    try {
++      var path = new URL(url, window.location.href).pathname;
++      return decodeURIComponent(path.substring(path.lastIndexOf("/") + 1));
++    } catch (e) {
++      var clean = String(url || "").split("?")[0].split("#")[0];
++      return decodeURIComponent(clean.substring(clean.lastIndexOf("/") + 1));
++    }
++  }
++
++  function getGifGeometry(url) {
++    var fileName = getGifFileName(url);
++    var override = GIF_GEOMETRIES[fileName] || {};
++    return {
++      body: override.body || DEFAULT_GIF_GEOMETRY.body,
++      clip: override.clip || DEFAULT_GIF_GEOMETRY.clip,
++      durationMs: override.durationMs || DEFAULT_GIF_GEOMETRY.durationMs,
++      fileName: fileName
++    };
++  }
++
++  function getCanvas() {
++    return document.getElementById("canvas") || document.querySelector("canvas");
++  }
++
++  function getDeviceToScreen() {
++    try {
++      var delegate = window.LAppDelegate && window.LAppDelegate.getInstance && window.LAppDelegate.getInstance();
++      var view = delegate && delegate.getView && delegate.getView();
++      return view && view._deviceToScreen;
++    } catch (e) {
++      return null;
++    }
++  }
++
++  function getLive2DModel() {
++    try {
++      var adapter = window.getLAppAdapter && window.getLAppAdapter();
++      if (adapter && adapter.getModel) return adapter.getModel();
++    } catch (e) {
++      /* ignore */
++    }
++
++    try {
++      var manager = window.LAppLive2DManager && window.LAppLive2DManager.getInstance && window.LAppLive2DManager.getInstance();
++      if (manager && manager.getModel) return manager.getModel(0);
++    } catch (e) {
++      /* ignore */
++    }
++
++    return null;
++  }
++
++  function getVisibleModelRect(canvas) {
++    var model = getLive2DModel();
++    var d2s = getDeviceToScreen();
++    var cubismModel = model && model._model;
++    var modelMatrix = model && model._modelMatrix;
++    if (!canvas || !cubismModel || !modelMatrix) {
++      return null;
++    }
++
++    var deviceToCssScale = canvas.width / canvas.clientWidth || 1;
++    var canInvertWithSdk = d2s && typeof d2s.invertTransformX === "function";
++    var canvasDeviceWidth = canvas.width;
++    var canvasDeviceHeight = canvas.height;
++
++    function logicalToCss(logicalX, logicalY) {
++      if (canInvertWithSdk) {
++        return {
++          x: d2s.invertTransformX(logicalX) / deviceToCssScale,
++          y: d2s.invertTransformY(logicalY) / deviceToCssScale
++        };
++      }
++
++      var screenSpan = canvasDeviceWidth > canvasDeviceHeight
++        ? Math.abs((canvasDeviceWidth / canvasDeviceHeight) * 2)
++        : 2;
++      var basePixels = canvasDeviceWidth > canvasDeviceHeight
++        ? canvasDeviceWidth
++        : canvasDeviceHeight;
++
++      return {
++        x: (logicalX * basePixels / screenSpan + canvasDeviceWidth * 0.5) / deviceToCssScale,
++        y: (-logicalY * basePixels / screenSpan + canvasDeviceHeight * 0.5) / deviceToCssScale
++      };
++    }
++
++    var minX = Infinity;
++    var minY = Infinity;
++    var maxX = -Infinity;
++    var maxY = -Infinity;
++    var drawableCount = cubismModel.getDrawableCount ? cubismModel.getDrawableCount() : 0;
++
++    for (var drawableIndex = 0; drawableIndex < drawableCount; drawableIndex += 1) {
++      var isVisible = cubismModel.getDrawableDynamicFlagIsVisible && cubismModel.getDrawableDynamicFlagIsVisible(drawableIndex);
++      var opacity = cubismModel.getDrawableOpacity ? cubismModel.getDrawableOpacity(drawableIndex) : 1;
++      if (isVisible === false || opacity <= 0.01) continue;
++
++      var vertices = cubismModel.getDrawableVertices && cubismModel.getDrawableVertices(drawableIndex);
++      if (!vertices) continue;
++
++      for (var vertexIndex = 0; vertexIndex < vertices.length; vertexIndex += 2) {
++        var logicalX = modelMatrix.transformX(vertices[vertexIndex]);
++        var logicalY = modelMatrix.transformY(vertices[vertexIndex + 1]);
++        var cssPoint = logicalToCss(logicalX, logicalY);
++        minX = Math.min(minX, cssPoint.x);
++        minY = Math.min(minY, cssPoint.y);
++        maxX = Math.max(maxX, cssPoint.x);
++        maxY = Math.max(maxY, cssPoint.y);
++      }
++    }
++
++    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
++    if (maxX <= minX || maxY <= minY) return null;
++
++    var canvasRect = canvas.getBoundingClientRect();
++    return {
++      left: canvasRect.left + minX,
++      top: canvasRect.top + minY,
++      width: maxX - minX,
++      height: maxY - minY
++    };
++  }
++
++  function getFallbackModelRect(canvas) {
++    var canvasRect = canvas ? canvas.getBoundingClientRect() : {
++      left: 0,
++      top: 0,
++      width: window.innerWidth,
++      height: window.innerHeight
++    };
++    var opts = window.__GIF_OVERLAY_OPTS__ || {};
++    var height = opts.height || Math.round(canvasRect.height * (opts.heightRatio || 0.45));
++    var width = height * (GIF_CANVAS.width / GIF_CANVAS.height) * (GIF_BODY_BOUNDS.width / GIF_CANVAS.width);
++    return {
++      left: canvasRect.left + (canvasRect.width - width) / 2,
++      top: canvasRect.top + (canvasRect.height - height) / 2,
++      width: width,
++      height: height
++    };
++  }
++
++  function createGifLayoutFromBodyRect(bodyRect, geometry) {
++    var body = geometry.body;
++    var clip = geometry.clip;
++    var imageWidth = bodyRect.width * (GIF_CANVAS.width / body.width);
++    var imageHeight = bodyRect.height * (GIF_CANVAS.height / body.height);
++    var clipLeft = bodyRect.left - imageWidth * ((body.left - clip.left) / GIF_CANVAS.width);
++    var clipTop = bodyRect.top - imageHeight * ((body.top - clip.top) / GIF_CANVAS.height);
++
++    return {
++      rect: {
++        left: clipLeft,
++        top: clipTop,
++        width: imageWidth * (clip.width / GIF_CANVAS.width),
++        height: imageHeight * (clip.height / GIF_CANVAS.height)
++      },
++      imageRect: {
++        left: -imageWidth * (clip.left / GIF_CANVAS.width),
++        top: -imageHeight * (clip.top / GIF_CANVAS.height),
++        width: imageWidth,
++        height: imageHeight
++      }
++    };
++  }
++
++  function playGif(url, durationMs) {
++    if (playing || !url) return;
++    playing = true;
++    var resolved = resolveUrl(url);
++    var geometry = getGifGeometry(resolved);
++
++    var canvases = Array.prototype.slice.call(document.querySelectorAll("canvas"));
++    var canvas = getCanvas();
++    var bodyRect = getVisibleModelRect(canvas) || getFallbackModelRect(canvas);
++    var opts = window.__GIF_OVERLAY_OPTS__ || {};
++    var factor = Number(opts.sizeFactor || window.__GIF_SIZE_FACTOR__ || 1);
++    bodyRect = {
++      left: bodyRect.left + (bodyRect.width * (1 - factor)) / 2,
++      top: bodyRect.top + (bodyRect.height * (1 - factor)) / 2,
++      width: bodyRect.width * factor,
++      height: bodyRect.height * factor
++    };
++    var layout = createGifLayoutFromBodyRect(bodyRect, geometry);
++    console.log("[gif-overlay] model-aligned layout", {
++      gif: geometry.fileName,
++      bodyRect: bodyRect,
++      overlayRect: layout.rect
++    });
++
++    var hidden = [];
++    var canvasHidden = false;
++    function restoreCanvases() {
++      hidden.forEach(function (pair) {
++        pair[0].style.visibility = pair[1] || "";
++      });
++      hidden = [];
++      canvasHidden = false;
++    }
++
++    function hideCanvases() {
++      if (canvasHidden) return;
++      canvasHidden = true;
++      canvases.forEach(function (c) {
++        hidden.push([c, c.style.visibility]);
++        c.style.visibility = "hidden";
++      });
++    }
++
++    var box = document.createElement("div");
++    box.id = OVERLAY_ID;
++    box.style.cssText =
++      "position:fixed;z-index:2147483647;pointer-events:none;background:transparent;" +
++      "overflow:hidden;" +
++      "left:" + layout.rect.left + "px;top:" + layout.rect.top + "px;" +
++      "width:" + layout.rect.width + "px;height:" + layout.rect.height + "px;";
++
++    var img = document.createElement("img");
++    // Cache-bust so the GIF always restarts from frame 0.
++    img.src = resolved + (resolved.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
++    img.style.cssText =
++      "position:absolute;max-width:none;display:block;background:transparent;" +
++      "left:" + layout.imageRect.left + "px;top:" + layout.imageRect.top + "px;" +
++      "width:" + layout.imageRect.width + "px;height:" + layout.imageRect.height + "px;";
++    img.onload = function () {
++      requestAnimationFrame(hideCanvases);
++    };
++    img.onerror = function () {
++      if (box.parentNode) box.parentNode.removeChild(box);
++      playing = false;
++    };
++    box.appendChild(img);
++    document.body.appendChild(box);
++
++    setTimeout(function () {
++      restoreCanvases();
++      requestAnimationFrame(function () {
++        requestAnimationFrame(function () {
++          if (box.parentNode) box.parentNode.removeChild(box);
++        });
++      });
++      playing = false;
++    }, durationMs || geometry.durationMs || DEFAULT_DURATION);
++  }
++
++  // Play one of the two character entrance animations after the Live2D canvas
++  // is ready.  The global flag prevents React remounts or duplicate scripts
++  // from replaying the entrance in the same application window.
++  var ENTRANCE_GIFS = [
++    "/gifs/09 钻出来（虚空传送门先出现 钻出）-.gif",
++    "/gifs/10 掉下来--使用上传的企鹅女孩图片作.gif"
++  ];
++  function playRandomEntrance() {
++    if (window.__GIF_ENTRANCE_PLAYED__) return;
++    var startedAt = Date.now();
++    function attempt() {
++      if (window.__GIF_ENTRANCE_PLAYED__) return;
++      var canvas = getCanvas();
++      var modelReady = canvas && (getVisibleModelRect(canvas) || Date.now() - startedAt >= 4000);
++      if (modelReady) {
++        window.__GIF_ENTRANCE_PLAYED__ = true;
++        var selected = ENTRANCE_GIFS[Math.floor(Math.random() * ENTRANCE_GIFS.length)];
++        playGif(selected, getGifGeometry(selected).durationMs);
++        return;
++      }
++      setTimeout(attempt, 200);
++    }
++    setTimeout(attempt, 700);
++  }
++  if (document.readyState === "loading") {
++    document.addEventListener("DOMContentLoaded", playRandomEntrance, { once: true });
++  } else {
++    playRandomEntrance();
++  }
++
++  function playAllGifs() {
++    var delay = 0;
++    GIF_TEST_URLS.forEach(function (url) {
++      var durationMs = getGifGeometry(url).durationMs;
++      setTimeout(function () {
++        playGif(url, durationMs);
++      }, delay);
++      delay += durationMs + GIF_TEST_GAP_MS;
++    });
++  }
++
++  // Manual trigger (for testing / interaction): double-click anywhere plays all
++  // action GIFs once with a 1s gap. Also serves as a diagnostic independent of
++  // the AI path.
++  document.addEventListener("dblclick", function () {
++    console.log("[gif-overlay] dblclick -> playAllGifs");
++    playAllGifs();
++  });
++
++  window.addEventListener("gif-overlay-play-all", playAllGifs);
++
++  // Diagnostic hooks: call playAllGifs() or playStompGif() from the DevTools
++  // console to test rendering directly.
++  window.playAllGifs = playAllGifs;
++  window.playStompGif = function () {
++    playGif("/gifs/Fuming.gif", DEFAULT_DURATION);
++  };
++  console.log("[gif-overlay] loaded. Try playAllGifs() in the console.");
++
++  function handleMessage(data) {
++    try {
++      var msg = typeof data === "string" ? JSON.parse(data) : data;
++      if (msg && msg.type === "audio" && msg.actions && msg.actions.gif) {
++        playGif(msg.actions.gif, msg.actions.gif_duration_ms);
++      }
++    } catch (e) {
++      /* non-JSON / binary frame -> ignore */
++    }
++  }
++
++  // Monkey-patch WebSocket so we can observe messages the React app receives.
++  // Runs as a classic <script> in <head>, before the deferred module script,
++  // so the patch is in place before the app opens its connection.
++  var NativeWS = window.WebSocket;
++  if (NativeWS && !NativeWS.__gifPatched) {
++    var Patched = function (url, protocols) {
++      var ws =
++        protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
++      ws.addEventListener("message", function (ev) {
++        handleMessage(ev.data);
++      });
++      return ws;
++    };
++    Patched.prototype = NativeWS.prototype;
++    Patched.CONNECTING = NativeWS.CONNECTING;
++    Patched.OPEN = NativeWS.OPEN;
++    Patched.CLOSING = NativeWS.CLOSING;
++    Patched.CLOSED = NativeWS.CLOSED;
++    Patched.__gifPatched = true;
++    window.WebSocket = Patched;
++  }
++})();
+diff --git a/src/renderer/src/components/canvas/live2d.tsx b/src/renderer/src/components/canvas/live2d.tsx
+index 8e60caa..9a42f7b 100644
+--- a/src/renderer/src/components/canvas/live2d.tsx
++++ b/src/renderer/src/components/canvas/live2d.tsx
+@@ -7,6 +7,7 @@ import { useIpcHandlers } from "@/hooks/utils/use-ipc-handlers";
+ import { useInterrupt } from "@/hooks/utils/use-interrupt";
+ import { useAudioTask } from "@/hooks/utils/use-audio-task";
+ import { useLive2DModel } from "@/hooks/canvas/use-live2d-model";
++import { useLive2DMouseTracking } from "@/hooks/canvas/use-live2d-mouse-tracking";
+ import { useLive2DResize } from "@/hooks/canvas/use-live2d-resize";
+ import { useAiState, AiStateEnum } from "@/context/ai-state-context";
+ import { useLive2DExpression } from "@/hooks/canvas/use-live2d-expression";
+@@ -39,6 +40,7 @@ export const Live2D = memo(
+       modelInfo,
+       canvasRef,
+     });
++    useLive2DMouseTracking({ modelInfo, canvasRef, enabled: true });
+ 
+     // Setup hooks
+     useIpcHandlers();
+diff --git a/src/renderer/src/context/live2d-config-context.tsx b/src/renderer/src/context/live2d-config-context.tsx
+index c5497ac..96dfefe 100644
+--- a/src/renderer/src/context/live2d-config-context.tsx
++++ b/src/renderer/src/context/live2d-config-context.tsx
+@@ -63,6 +63,9 @@ export interface ModelInfo {
+   /** Enable pointer interactivity */
+   pointerInteractive?: boolean;
+ 
++  /** Let the model's eyes/head follow the mouse pointer */
++  mouseTracking?: boolean;
++
+   /** Tap motion mapping configuration */
+   tapMotions?: TapMotionMap;
+ 
+diff --git a/src/renderer/src/hooks/canvas/use-live2d-mouse-tracking.ts b/src/renderer/src/hooks/canvas/use-live2d-mouse-tracking.ts
+new file mode 100644
+index 0000000..0d5a30e
+--- /dev/null
++++ b/src/renderer/src/hooks/canvas/use-live2d-mouse-tracking.ts
+@@ -0,0 +1,103 @@
++/* eslint-disable no-underscore-dangle */
++import { RefObject, useEffect, useRef } from 'react';
++import { ModelInfo } from '@/context/live2d-config-context';
++import { LAppDelegate } from '../../../WebSDK/src/lappdelegate';
++
++const RETURN_TO_CENTER_DELAY_MS = 700;
++const FOLLOW_SMOOTHING = 0.18;
++const TRACK_LIMIT = 0.95;
++
++interface Props {
++  modelInfo: ModelInfo | undefined;
++  canvasRef: RefObject<HTMLCanvasElement>;
++  enabled?: boolean;
++}
++
++const clamp = (value: number): number => Math.max(-TRACK_LIMIT, Math.min(TRACK_LIMIT, value));
++
++function pointerToModel(canvas: HTMLCanvasElement, clientX: number, clientY: number) {
++  const view = LAppDelegate.getInstance()?.getView?.();
++  if (!view?._deviceToScreen) return null;
++
++  const rect = canvas.getBoundingClientRect();
++  if (!rect.width || !rect.height) return null;
++  const scale = canvas.width / rect.width || 1;
++  const deviceX = (clientX - rect.left) * scale;
++  const deviceY = (clientY - rect.top) * scale;
++  return {
++    x: clamp(view._deviceToScreen.transformX(deviceX)),
++    y: clamp(view._deviceToScreen.transformY(deviceY)),
++  };
++}
++
++export function useLive2DMouseTracking({ modelInfo, canvasRef, enabled = true }: Props) {
++  const target = useRef({ x: 0, y: 0 });
++  const current = useRef({ x: 0, y: 0 });
++  const animationFrame = useRef<number | null>(null);
++  const centerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
++
++  useEffect(() => {
++    const active = enabled
++      && modelInfo?.pointerInteractive !== false
++      && modelInfo?.mouseTracking !== false;
++
++    const getModel = () => (window as any).getLAppAdapter?.()?.getModel?.();
++
++    const reset = () => {
++      if (animationFrame.current !== null) cancelAnimationFrame(animationFrame.current);
++      animationFrame.current = null;
++      if (centerTimer.current) clearTimeout(centerTimer.current);
++      centerTimer.current = null;
++      getModel()?.setDragging?.(0, 0);
++      target.current = { x: 0, y: 0 };
++      current.current = { x: 0, y: 0 };
++    };
++
++    if (!active) {
++      reset();
++      return reset;
++    }
++
++    const animate = () => {
++      const model = getModel();
++      if (model?.setDragging) {
++        current.current = {
++          x: current.current.x + (target.current.x - current.current.x) * FOLLOW_SMOOTHING,
++          y: current.current.y + (target.current.y - current.current.y) * FOLLOW_SMOOTHING,
++        };
++        model.setDragging(current.current.x, current.current.y);
++      }
++      animationFrame.current = requestAnimationFrame(animate);
++    };
++
++    const scheduleCenter = () => {
++      if (centerTimer.current) clearTimeout(centerTimer.current);
++      centerTimer.current = setTimeout(() => {
++        target.current = { x: 0, y: 0 };
++      }, RETURN_TO_CENTER_DELAY_MS);
++    };
++
++    const handlePointerMove = (event: PointerEvent) => {
++      const canvas = canvasRef.current;
++      if (!canvas || event.buttons !== 0) return;
++      const position = pointerToModel(canvas, event.clientX, event.clientY);
++      if (position) {
++        target.current = position;
++        scheduleCenter();
++      }
++    };
++
++    const center = () => { target.current = { x: 0, y: 0 }; };
++    animationFrame.current = requestAnimationFrame(animate);
++    window.addEventListener('pointermove', handlePointerMove, { passive: true });
++    window.addEventListener('pointerleave', center);
++    window.addEventListener('blur', center);
++
++    return () => {
++      window.removeEventListener('pointermove', handlePointerMove);
++      window.removeEventListener('pointerleave', center);
++      window.removeEventListener('blur', center);
++      reset();
++    };
++  }, [canvasRef, enabled, modelInfo?.pointerInteractive, modelInfo?.mouseTracking, modelInfo?.url]);
++}
+-- 
+2.55.0.windows.2
+

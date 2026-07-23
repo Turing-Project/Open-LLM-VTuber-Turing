@@ -2,8 +2,29 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $clientRoot = Join-Path $projectRoot "electron-client"
+$clientPatch = Join-Path $projectRoot "patches\electron-client-desktop.patch"
 $backendRoot = Join-Path $clientRoot "backend"
 $uvPath = (Get-Command uv -ErrorAction Stop).Source
+
+if (-not (Test-Path (Join-Path $clientRoot ".git"))) {
+    git clone https://github.com/Open-LLM-VTuber/Open-LLM-VTuber-Web.git $clientRoot
+    if ($LASTEXITCODE -ne 0) { throw "Failed to clone Electron client" }
+}
+
+Push-Location $clientRoot
+try {
+    git apply --reverse --check $clientPatch 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        git apply --check $clientPatch
+        if ($LASTEXITCODE -ne 0) {
+            throw "Electron patch does not apply cleanly to the current client version"
+        }
+        git apply $clientPatch
+        if ($LASTEXITCODE -ne 0) { throw "Failed to apply Electron desktop patch" }
+    }
+} finally {
+    Pop-Location
+}
 
 if (Test-Path $backendRoot) {
     Remove-Item -LiteralPath $backendRoot -Recurse -Force
