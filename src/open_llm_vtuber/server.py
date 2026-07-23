@@ -8,8 +8,10 @@ It uses FastAPI for the server and Starlette for static file serving.
 
 import os
 import shutil
+import asyncio
 
 from fastapi import FastAPI
+from loguru import logger
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response, FileResponse
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
@@ -17,6 +19,36 @@ from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from .routes import init_client_ws_route, init_webtool_routes, init_proxy_route
 from .service_context import ServiceContext
 from .config_manager.utils import Config
+
+
+def _install_fish_stream_exception_filter() -> None:
+    """Suppress a known fish-audio-sdk sender task race during stream shutdown."""
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+
+    def handle_exception(event_loop, context):
+        exception = context.get("exception")
+        exception_name = exception.__class__.__name__ if exception else ""
+        exception_text = str(exception or "")
+        is_fish_shutdown_race = (
+            exception_name == "LocalProtocolError"
+            and "LOCAL_CLOSING" in exception_text
+            and "BytesMessage" in exception_text
+        )
+
+        if is_fish_shutdown_race:
+            logger.debug(
+                "Suppressed Fish streaming TTS shutdown race: "
+                f"{exception_text}"
+            )
+            return
+
+        if previous_handler:
+            previous_handler(event_loop, context)
+        else:
+            event_loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handle_exception)
 
 
 # Create a custom StaticFiles class that adds CORS headers
@@ -109,6 +141,10 @@ class WebSocketServer:
             default_context_cache or ServiceContext()
         )  # Use provided context or initialize a new empty one waiting to be loaded
         # It will be populated during the initialize method call
+
+        @self.app.on_event("startup")
+        async def _on_startup():
+            _install_fish_stream_exception_filter()
 
         # Add global CORS middleware
         self.app.add_middleware(
