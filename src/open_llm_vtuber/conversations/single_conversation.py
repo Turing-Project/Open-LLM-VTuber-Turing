@@ -26,7 +26,7 @@ from ..utils.tts_preprocessor import StreamingReasoningMarkupFilter
 from ..agent.output_types import SentenceOutput, AudioOutput, DisplayText
 
 
-FIRST_AUDIO_TIMEOUT_SECONDS = 4.0
+FIRST_AUDIO_TIMEOUT_SECONDS = 8.0
 NEXT_AUDIO_IDLE_TIMEOUT_SECONDS = 6.0
 
 
