@@ -1,4 +1,4 @@
-From 778e92d4a00a665b67d07c9ee6b2536160341af4 Mon Sep 17 00:00:00 2001
+From d6fdeea0177cc0b6735a39c7c2f91741e28fd730 Mon Sep 17 00:00:00 2001
 From: Songjiacheng <herbertsongjc@qq.com>
 Date: Fri, 24 Jul 2026 03:35:03 +0800
 Subject: [PATCH] feat(desktop): bundle backend and restore pet interactions
@@ -10,12 +10,21 @@ Subject: [PATCH] feat(desktop): bundle backend and restore pet interactions
  src/main/index.ts                             |  41 +-
  src/renderer/index.html                       |   2 +
  src/renderer/public/overlay.js                | 404 ++++++++++++++++++
+ src/renderer/src/App.tsx                      |   7 +-
  src/renderer/src/components/canvas/live2d.tsx |   2 +
+ .../src/components/sidebar/setting/agent.tsx  |  20 +
+ .../src/context/game-watch-context.tsx        | 122 ++++++
  .../src/context/live2d-config-context.tsx     |   3 +
  .../hooks/canvas/use-live2d-mouse-tracking.ts | 103 +++++
- 9 files changed, 673 insertions(+), 9 deletions(-)
+ .../sidebar/setting/use-agent-settings.ts     |  28 +-
+ .../src/hooks/utils/use-media-capture.tsx     |  13 +-
+ .../src/hooks/utils/use-trigger-speak.ts      |   9 +-
+ src/renderer/src/locales/en/translation.json  |   6 +-
+ src/renderer/src/locales/zh/translation.json  |   6 +-
+ 17 files changed, 871 insertions(+), 22 deletions(-)
  create mode 100644 src/main/backend-manager.ts
  create mode 100644 src/renderer/public/overlay.js
+ create mode 100644 src/renderer/src/context/game-watch-context.tsx
  create mode 100644 src/renderer/src/hooks/canvas/use-live2d-mouse-tracking.ts
 
 diff --git a/.gitignore b/.gitignore
@@ -686,6 +695,31 @@ index 0000000..11279e8
 +    window.WebSocket = Patched;
 +  }
 +})();
+diff --git a/src/renderer/src/App.tsx b/src/renderer/src/App.tsx
+index 9fb874e..36290b0 100644
+--- a/src/renderer/src/App.tsx
++++ b/src/renderer/src/App.tsx
+@@ -21,6 +21,7 @@ import TitleBar from "./components/electron/title-bar";
+ import { InputSubtitle } from "./components/electron/input-subtitle";
+ import { ProactiveSpeakProvider } from "./context/proactive-speak-context";
+ import { ScreenCaptureProvider } from "./context/screen-capture-context";
++import { GameWatchProvider } from "./context/game-watch-context";
+ import { GroupProvider } from "./context/group-context";
+ import { BrowserProvider } from "./context/browser-context";
+ // eslint-disable-next-line import/no-extraneous-dependencies, import/newline-after-import
+@@ -183,8 +184,10 @@ function AppWithGlobalStyles(): JSX.Element {
+                           <GroupProvider>
+                             <BrowserProvider>
+                               <WebSocketHandler>
+-                                <Toaster />
+-                                <AppContent />
++                                <GameWatchProvider>
++                                  <Toaster />
++                                  <AppContent />
++                                </GameWatchProvider>
+                               </WebSocketHandler>
+                             </BrowserProvider>
+                           </GroupProvider>
 diff --git a/src/renderer/src/components/canvas/live2d.tsx b/src/renderer/src/components/canvas/live2d.tsx
 index 8e60caa..9a42f7b 100644
 --- a/src/renderer/src/components/canvas/live2d.tsx
@@ -706,6 +740,175 @@ index 8e60caa..9a42f7b 100644
  
      // Setup hooks
      useIpcHandlers();
+diff --git a/src/renderer/src/components/sidebar/setting/agent.tsx b/src/renderer/src/components/sidebar/setting/agent.tsx
+index 57c03c4..f9a9be0 100644
+--- a/src/renderer/src/components/sidebar/setting/agent.tsx
++++ b/src/renderer/src/components/sidebar/setting/agent.tsx
+@@ -14,9 +14,12 @@ function Agent({ onSave, onCancel }: AgentProps): JSX.Element {
+   const { t } = useTranslation();
+   const {
+     settings,
++    gameWatchSettings,
+     handleAllowProactiveSpeakChange,
+     handleIdleSecondsChange,
+     handleAllowButtonTriggerChange,
++    handleGameWatchEnabledChange,
++    handleGameWatchIntervalChange,
+   } = useAgentSettings({ onSave, onCancel });
+ 
+   return (
+@@ -43,6 +46,23 @@ function Agent({ onSave, onCancel }: AgentProps): JSX.Element {
+         checked={settings.allowButtonTrigger}
+         onChange={handleAllowButtonTriggerChange}
+       />
++
++      <SwitchField
++        label={t('settings.agent.gameWatch')}
++        checked={gameWatchSettings.enabled}
++        onChange={handleGameWatchEnabledChange}
++      />
++
++      {gameWatchSettings.enabled && (
++        <NumberField
++          label={t('settings.agent.gameWatchIntervalSeconds')}
++          value={gameWatchSettings.intervalSeconds}
++          onChange={(value) => handleGameWatchIntervalChange(Number(value))}
++          min={10}
++          step={10}
++          allowMouseWheel
++        />
++      )}
+     </Stack>
+   );
+ }
+diff --git a/src/renderer/src/context/game-watch-context.tsx b/src/renderer/src/context/game-watch-context.tsx
+new file mode 100644
+index 0000000..a9647cd
+--- /dev/null
++++ b/src/renderer/src/context/game-watch-context.tsx
+@@ -0,0 +1,122 @@
++import {
++  createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef,
++} from 'react';
++import { useLocalStorage } from '@/hooks/utils/use-local-storage';
++import { useTriggerSpeak } from '@/hooks/utils/use-trigger-speak';
++import { useAiState, AiStateEnum } from '@/context/ai-state-context';
++import { useWebSocket } from '@/context/websocket-context';
++import { useScreenCaptureContext } from '@/context/screen-capture-context';
++
++export interface GameWatchSettings {
++  enabled: boolean;
++  intervalSeconds: number;
++  autoStartScreenCapture: boolean;
++  commentStyle: string;
++}
++
++interface GameWatchContextType {
++  settings: GameWatchSettings;
++  updateSettings: (settings: GameWatchSettings) => void;
++}
++
++const defaultSettings: GameWatchSettings = {
++  enabled: false,
++  intervalSeconds: 120,
++  autoStartScreenCapture: true,
++  commentStyle: 'playful_praise_when_good',
++};
++
++const GameWatchContext = createContext<GameWatchContextType | null>(null);
++
++export function GameWatchProvider({ children }: { children: ReactNode }) {
++  const [storedSettings, setStoredSettings] = useLocalStorage<GameWatchSettings>(
++    'gameWatchSettings',
++    defaultSettings,
++  );
++  const settings = { ...defaultSettings, ...storedSettings };
++  const { aiState } = useAiState();
++  const { wsState } = useWebSocket();
++  const {
++    stream, isStreaming, startCapture,
++  } = useScreenCaptureContext();
++  const { sendTriggerSignal } = useTriggerSpeak();
++  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
++  const lastTriggerRef = useRef<number | null>(null);
++
++  const clearTimer = useCallback(() => {
++    if (intervalRef.current) clearInterval(intervalRef.current);
++    intervalRef.current = null;
++  }, []);
++
++  useEffect(() => {
++    if (settings.enabled && settings.autoStartScreenCapture && !isStreaming) {
++      startCapture();
++    }
++  }, [settings.enabled, settings.autoStartScreenCapture, isStreaming, startCapture]);
++
++  const triggerObservation = useCallback(async () => {
++    if (!settings.enabled || aiState !== AiStateEnum.IDLE || wsState !== 'OPEN') return;
++    if (!stream && settings.autoStartScreenCapture && !isStreaming) await startCapture();
++    if (!stream && !isStreaming) return;
++
++    const now = Date.now();
++    const idleSeconds = lastTriggerRef.current
++      ? (now - lastTriggerRef.current) / 1000
++      : settings.intervalSeconds;
++    lastTriggerRef.current = now;
++    await sendTriggerSignal(
++      idleSeconds,
++      { game_watch: true, comment_style: settings.commentStyle },
++      { camera: false, screen: true },
++    );
++  }, [
++    settings.enabled, settings.autoStartScreenCapture, settings.commentStyle,
++    settings.intervalSeconds, aiState, wsState, stream, isStreaming,
++    startCapture, sendTriggerSignal,
++  ]);
++
++  useEffect(() => {
++    clearTimer();
++    if (!settings.enabled || aiState !== AiStateEnum.IDLE || wsState !== 'OPEN') {
++      return clearTimer;
++    }
++    intervalRef.current = setInterval(
++      triggerObservation,
++      Math.max(10, settings.intervalSeconds) * 1000,
++    );
++    return clearTimer;
++  }, [
++    settings.enabled, settings.intervalSeconds, aiState, wsState,
++    triggerObservation, clearTimer,
++  ]);
++
++  useEffect(() => clearTimer, [clearTimer]);
++
++  const updateSettings = useCallback((newSettings: GameWatchSettings) => {
++    setStoredSettings({
++      ...defaultSettings,
++      ...newSettings,
++      intervalSeconds: Math.max(
++        10,
++        Number(newSettings.intervalSeconds) || defaultSettings.intervalSeconds,
++      ),
++    });
++  }, [setStoredSettings]);
++
++  const value = useMemo(
++    () => ({ settings, updateSettings }),
++    [settings, updateSettings],
++  );
++
++  return (
++    <GameWatchContext.Provider value={value}>
++      {children}
++    </GameWatchContext.Provider>
++  );
++}
++
++export function useGameWatch() {
++  const context = useContext(GameWatchContext);
++  if (!context) throw new Error('useGameWatch must be used within a GameWatchProvider');
++  return context;
++}
 diff --git a/src/renderer/src/context/live2d-config-context.tsx b/src/renderer/src/context/live2d-config-context.tsx
 index c5497ac..96dfefe 100644
 --- a/src/renderer/src/context/live2d-config-context.tsx
@@ -829,6 +1032,197 @@ index 0000000..0d5a30e
 +    };
 +  }, [canvasRef, enabled, modelInfo?.pointerInteractive, modelInfo?.mouseTracking, modelInfo?.url]);
 +}
+diff --git a/src/renderer/src/hooks/sidebar/setting/use-agent-settings.ts b/src/renderer/src/hooks/sidebar/setting/use-agent-settings.ts
+index 58949f9..a9a3649 100644
+--- a/src/renderer/src/hooks/sidebar/setting/use-agent-settings.ts
++++ b/src/renderer/src/hooks/sidebar/setting/use-agent-settings.ts
+@@ -1,5 +1,6 @@
+ import { useCallback, useEffect, useState } from 'react';
+ import { useProactiveSpeak } from '@/context/proactive-speak-context';
++import { useGameWatch } from '@/context/game-watch-context';
+ 
+ interface UseAgentSettingsProps {
+   onSave?: (callback: () => void) => () => void
+@@ -8,6 +9,7 @@ interface UseAgentSettingsProps {
+ 
+ export function useAgentSettings({ onSave, onCancel }: UseAgentSettingsProps = {}) {
+   const { settings: persistedSettings, updateSettings } = useProactiveSpeak();
++  const { settings: persistedGameWatchSettings, updateSettings: updateGameWatchSettings } = useGameWatch();
+ 
+   const [tempSettings, setTempSettings] = useState({
+     allowProactiveSpeak: persistedSettings.allowProactiveSpeak,
+@@ -18,6 +20,8 @@ export function useAgentSettings({ onSave, onCancel }: UseAgentSettingsProps = {
+   const [originalSettings, setOriginalSettings] = useState({
+     ...persistedSettings,
+   });
++  const [tempGameWatchSettings, setTempGameWatchSettings] = useState(persistedGameWatchSettings);
++  const [originalGameWatchSettings, setOriginalGameWatchSettings] = useState(persistedGameWatchSettings);
+ 
+   useEffect(() => {
+     if (persistedSettings) {
+@@ -26,6 +30,11 @@ export function useAgentSettings({ onSave, onCancel }: UseAgentSettingsProps = {
+     }
+   }, [persistedSettings]);
+ 
++  useEffect(() => {
++    setOriginalGameWatchSettings(persistedGameWatchSettings);
++    setTempGameWatchSettings(persistedGameWatchSettings);
++  }, [persistedGameWatchSettings]);
++
+   const handleAllowProactiveSpeakChange = useCallback((checked: boolean) => {
+     setTempSettings((prev) => ({
+       ...prev,
+@@ -47,15 +56,27 @@ export function useAgentSettings({ onSave, onCancel }: UseAgentSettingsProps = {
+     }));
+   }, []);
+ 
++  const handleGameWatchEnabledChange = useCallback((checked: boolean) => {
++    setTempGameWatchSettings((prev) => ({ ...prev, enabled: checked }));
++  }, []);
++
++  const handleGameWatchIntervalChange = useCallback((value: number) => {
++    setTempGameWatchSettings((prev) => ({ ...prev, intervalSeconds: value }));
++  }, []);
++
+   const handleSave = useCallback(() => {
+     updateSettings(tempSettings);
++    updateGameWatchSettings(tempGameWatchSettings);
+     setOriginalSettings(tempSettings);
+-  }, [updateSettings, tempSettings]);
++    setOriginalGameWatchSettings(tempGameWatchSettings);
++  }, [updateSettings, updateGameWatchSettings, tempSettings, tempGameWatchSettings]);
+ 
+   const handleCancel = useCallback(() => {
+     setTempSettings(originalSettings);
+     updateSettings(originalSettings);
+-  }, [originalSettings, updateSettings]);
++    setTempGameWatchSettings(originalGameWatchSettings);
++    updateGameWatchSettings(originalGameWatchSettings);
++  }, [originalSettings, originalGameWatchSettings, updateSettings, updateGameWatchSettings]);
+ 
+   useEffect(() => {
+     if (!onSave || !onCancel) return;
+@@ -71,8 +92,11 @@ export function useAgentSettings({ onSave, onCancel }: UseAgentSettingsProps = {
+ 
+   return {
+     settings: tempSettings,
++    gameWatchSettings: tempGameWatchSettings,
+     handleAllowProactiveSpeakChange,
+     handleIdleSecondsChange,
+     handleAllowButtonTriggerChange,
++    handleGameWatchEnabledChange,
++    handleGameWatchIntervalChange,
+   };
+ }
+diff --git a/src/renderer/src/hooks/utils/use-media-capture.tsx b/src/renderer/src/hooks/utils/use-media-capture.tsx
+index 19170d0..d0cede7 100644
+--- a/src/renderer/src/hooks/utils/use-media-capture.tsx
++++ b/src/renderer/src/hooks/utils/use-media-capture.tsx
+@@ -25,6 +25,11 @@ interface ImageData {
+   mime_type: string;
+ }
+ 
++interface CaptureOptions {
++  camera?: boolean;
++  screen?: boolean;
++}
++
+ export function useMediaCapture() {
+   const { t } = useTranslation();
+   const { stream: cameraStream } = useCamera();
+@@ -98,11 +103,13 @@ export function useMediaCapture() {
+     }
+   }, [t, getCompressionQuality, getImageMaxWidth]);
+ 
+-  const captureAllMedia = useCallback(async () => {
++  const captureAllMedia = useCallback(async (
++    options: CaptureOptions = { camera: true, screen: true },
++  ) => {
+     const images: ImageData[] = [];
+ 
+     // Capture camera frame
+-    if (cameraStream) {
++    if (options.camera !== false && cameraStream) {
+       const cameraFrame = await captureFrame(cameraStream, 'camera');
+       if (cameraFrame) {
+         images.push({
+@@ -114,7 +121,7 @@ export function useMediaCapture() {
+     }
+ 
+     // Capture screen frame
+-    if (screenStream) {
++    if (options.screen !== false && screenStream) {
+       const screenFrame = await captureFrame(screenStream, 'screen');
+       if (screenFrame) {
+         images.push({
+diff --git a/src/renderer/src/hooks/utils/use-trigger-speak.ts b/src/renderer/src/hooks/utils/use-trigger-speak.ts
+index 8c3b8e8..3d39fd8 100644
+--- a/src/renderer/src/hooks/utils/use-trigger-speak.ts
++++ b/src/renderer/src/hooks/utils/use-trigger-speak.ts
+@@ -7,12 +7,17 @@ export function useTriggerSpeak() {
+   const { captureAllMedia } = useMediaCapture();
+ 
+   const sendTriggerSignal = useCallback(
+-    async (actualIdleTime: number) => {
+-      const images = await captureAllMedia();
++    async (
++      actualIdleTime: number,
++      metadata: Record<string, unknown> = {},
++      captureOptions: { camera?: boolean; screen?: boolean } = {},
++    ) => {
++      const images = await captureAllMedia(captureOptions);
+       sendMessage({
+         type: "ai-speak-signal",
+         idle_time: actualIdleTime,
+         images,
++        ...metadata,
+       });
+     },
+     [sendMessage, captureAllMedia],
+diff --git a/src/renderer/src/locales/en/translation.json b/src/renderer/src/locales/en/translation.json
+index 96cb2c8..f36838c 100644
+--- a/src/renderer/src/locales/en/translation.json
++++ b/src/renderer/src/locales/en/translation.json
+@@ -53,7 +53,9 @@
+     "agent": {
+       "allowProactiveSpeak": "Allow AI to Speak Proactively",
+       "idleSecondsToSpeak": "Idle seconds allow AI to speak",
+-      "allowButtonTrigger": "Prompt AI to Speak via Raise Hand Button"
++      "allowButtonTrigger": "Prompt AI to Speak via Raise Hand Button",
++      "gameWatch": "Game Watch Chatter",
++      "gameWatchIntervalSeconds": "Game watch interval (seconds)"
+     },
+     "about": {
+       "title": "Open LLM VTuber Frontend",
+@@ -136,4 +138,4 @@
+     "connecting": "Connecting",
+     "clickToReconnect": "Click to Reconnect"
+   }
+-} 
+\ No newline at end of file
++} 
+diff --git a/src/renderer/src/locales/zh/translation.json b/src/renderer/src/locales/zh/translation.json
+index 575a7e9..cc66620 100644
+--- a/src/renderer/src/locales/zh/translation.json
++++ b/src/renderer/src/locales/zh/translation.json
+@@ -51,7 +51,9 @@
+     "agent": {
+       "allowProactiveSpeak": "允许AI主动发言",
+       "idleSecondsToSpeak": "空闲多少秒后AI可发言",
+-      "allowButtonTrigger": "通过举手按钮提示AI发言"
++      "allowButtonTrigger": "通过举手按钮提示AI发言",
++      "gameWatch": "游戏观察搭茬",
++      "gameWatchIntervalSeconds": "游戏观察间隔（秒）"
+     },
+     "about": {
+       "title": "Open LLM VTuber 前端",
+@@ -133,4 +135,4 @@
+     "connecting": "连接中",
+     "clickToReconnect": "点击重新连接"
+   }
+-} 
+\ No newline at end of file
++} 
 -- 
 2.55.0.windows.2
 
