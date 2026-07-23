@@ -26,7 +26,7 @@ from ..utils.tts_preprocessor import StreamingReasoningMarkupFilter
 from ..agent.output_types import SentenceOutput, AudioOutput, DisplayText
 
 
-FIRST_AUDIO_TIMEOUT_SECONDS = 4.0
+FIRST_AUDIO_TIMEOUT_SECONDS = 8.0
 NEXT_AUDIO_IDLE_TIMEOUT_SECONDS = 6.0
 
 
@@ -252,6 +252,17 @@ async def process_single_conversation(
             if stream_error is None:
                 raise
         full_stream_response = "".join(response_chunks)
+        if not full_stream_response.strip():
+            logger.warning(
+                f"[stream-tts] request={request_id} LLM stream returned no speakable text; falling back"
+            )
+            log_timeline("流式LLM结束: 未收到可播放文本, 回退旧TTS")
+            tts_manager.clear_playback_expected()
+            await websocket_send(
+                json.dumps({"type": "audio-stream-error", "stream_id": stream_id})
+            )
+            return None
+
         await websocket_send(
             json.dumps(
                 {

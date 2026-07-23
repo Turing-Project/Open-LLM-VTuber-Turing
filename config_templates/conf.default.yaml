@@ -109,7 +109,7 @@ character_config:
         llm_api_key: 'somethingelse'
         organization_id: null
         project_id: null
-        model: 'qwen2.5:latest'
+        model: 'openai/gpt-5.6-luna'
         temperature: 1.0 # value between 0 to 2
         interrupt_method: 'user'
         # This is the method to use for prompting the interruption signal. 
@@ -271,9 +271,9 @@ character_config:
       lang: '' # put nothing and it will be auto
 
     fish_audio_asr:
-      api_key: '' # or set FISH_API_KEY environment variable
-      base_url: 'https://api.fish.audio'
-      language: '' # leave empty for auto-detect
+      api_key: ''
+      base_url: 'http://124.221.95.34:8000/transcribe'
+      language: 'zh-CN'
 
   # =================== Text to Speech ===================
   tts_config:
