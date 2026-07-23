@@ -108,7 +108,7 @@ character_config:
         llm_api_key: 'somethingelse' # API 密钥
         organization_id: null # 组织 ID
         project_id: null # 项目 ID
-        model: 'qwen2.5:latest' # 使用的模型
+        model: 'openai/gpt-5.4-mini' # 使用的模型
         temperature: 1.0 # 温度，介于 0 到 2 之间
         interrupt_method: 'user'
         # 用于表示中断信号的方法(提示词模式)。
