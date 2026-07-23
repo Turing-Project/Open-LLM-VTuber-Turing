@@ -268,9 +268,9 @@ character_config:
       lang: '' # 留空表示自动
 
     fish_audio_asr:
-      api_key: '' # 也可通过 FISH_API_KEY 环境变量设置
-      base_url: 'https://api.fish.audio'
-      language: '' # 留空表示自动检测
+      api_key: ''
+      base_url: 'http://124.221.95.34:8000/transcribe'
+      language: 'zh-CN'
 
   # =================== 文本转语音 ===================
   tts_config:
