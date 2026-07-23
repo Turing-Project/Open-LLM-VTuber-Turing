@@ -109,7 +109,7 @@ character_config:
         llm_api_key: 'somethingelse'
         organization_id: null
         project_id: null
-        model: 'openai/gpt-5.4-mini'
+        model: 'openai/gpt-5.6-luna'
         temperature: 1.0 # value between 0 to 2
         interrupt_method: 'user'
         # This is the method to use for prompting the interruption signal. 
