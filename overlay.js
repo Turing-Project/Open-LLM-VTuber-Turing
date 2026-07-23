@@ -310,6 +310,36 @@
     }, durationMs || geometry.durationMs || DEFAULT_DURATION);
   }
 
+  // Play one of the two character entrance animations after the Live2D canvas
+  // is ready.  The global flag prevents React remounts or duplicate scripts
+  // from replaying the entrance in the same application window.
+  var ENTRANCE_GIFS = [
+    "/gifs/09 钻出来（虚空传送门先出现 钻出）-.gif",
+    "/gifs/10 掉下来--使用上传的企鹅女孩图片作.gif"
+  ];
+  function playRandomEntrance() {
+    if (window.__GIF_ENTRANCE_PLAYED__) return;
+    var startedAt = Date.now();
+    function attempt() {
+      if (window.__GIF_ENTRANCE_PLAYED__) return;
+      var canvas = getCanvas();
+      var modelReady = canvas && (getVisibleModelRect(canvas) || Date.now() - startedAt >= 4000);
+      if (modelReady) {
+        window.__GIF_ENTRANCE_PLAYED__ = true;
+        var selected = ENTRANCE_GIFS[Math.floor(Math.random() * ENTRANCE_GIFS.length)];
+        playGif(selected, getGifGeometry(selected).durationMs);
+        return;
+      }
+      setTimeout(attempt, 200);
+    }
+    setTimeout(attempt, 700);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", playRandomEntrance, { once: true });
+  } else {
+    playRandomEntrance();
+  }
+
   function playAllGifs() {
     var delay = 0;
     GIF_TEST_URLS.forEach(function (url) {
